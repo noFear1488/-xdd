@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yandex-nosite"
+version = "0.1.0"
+description = "Поиск бизнесов без сайта по данным Яндекс Карт (официальный Search API)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+yandex-nosite = "yandex_nosite.cli:main"
+
+[tool.setuptools]
+packages = ["yandex_nosite"]
