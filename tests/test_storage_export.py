@@ -4,7 +4,14 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from yandex_nosite.export import write, write_csv, write_json, write_xlsx
+from yandex_nosite.export import (
+    MOBILE_FIELDS,
+    resolve_fields,
+    write,
+    write_csv,
+    write_json,
+    write_xlsx,
+)
 from yandex_nosite.models import Business
 from yandex_nosite.sitecheck import NO_SITE, SOCIAL_ONLY
 from yandex_nosite.storage import Storage
@@ -153,6 +160,35 @@ class ExportTest(unittest.TestCase):
     def test_unknown_format_rejected(self):
         with self.assertRaises(ValueError):
             write(self.items, self.path / "x.pdf")
+
+    def test_compact_csv_has_only_mobile_columns(self):
+        target = self.path / "mobile.csv"
+        write(self.items, target, compact=True)
+        header = target.read_text(encoding="utf-8-sig").splitlines()[0]
+        self.assertEqual(len(header.split(";")), len(MOBILE_FIELDS))
+        self.assertIn("Телефон", header)
+        self.assertNotIn("Долгота", header)
+
+    def test_compact_xlsx_has_only_mobile_columns(self):
+        target = self.path / "mobile.xlsx"
+        write(self.items, target, compact=True)
+        with zipfile.ZipFile(target) as book:
+            sheet = book.read("xl/worksheets/sheet1.xml").decode("utf-8")
+        self.assertIn("Название", sheet)
+        self.assertNotIn("Долгота", sheet)
+        self.assertIn("autoFilter", sheet)
+        self.assertIn("customWidth", sheet)
+
+    def test_json_ignores_compact(self):
+        target = self.path / "full.json"
+        write(self.items, target, compact=True)
+        data = json.loads(target.read_text(encoding="utf-8"))
+        self.assertIn("lon", data[0])
+
+    def test_explicit_fields_validated(self):
+        self.assertEqual(resolve_fields(fields=["name", "phone"]), ["name", "phone"])
+        with self.assertRaises(ValueError):
+            resolve_fields(fields=["name", "нет-такой"])
 
 
 if __name__ == "__main__":

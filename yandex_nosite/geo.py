@@ -114,6 +114,16 @@ def iter_grid(area: BBox, rows: int, cols: int) -> Iterator[BBox]:
 # Встроенный справочник городов: приблизительные границы застройки.
 REGIONS: dict[str, BBox] = {
     "moscow": BBox(37.32, 55.55, 37.90, 55.92),
+    # Область целиком — очень большая: для полного обхода её лучше сканировать
+    # по городам, а не одним прогоном.
+    "moscow-oblast": BBox(35.15, 54.25, 40.20, 56.95),
+    "podolsk": BBox(37.50, 55.40, 37.62, 55.47),
+    "khimki": BBox(37.28, 55.87, 37.48, 55.95),
+    "balashikha": BBox(37.90, 55.77, 38.10, 55.86),
+    "mytishchi": BBox(37.68, 55.88, 37.82, 55.96),
+    "lyubertsy": BBox(37.85, 55.65, 37.98, 55.72),
+    "korolev": BBox(37.78, 55.89, 37.93, 55.96),
+    "odintsovo": BBox(37.22, 55.65, 37.34, 55.71),
     "spb": BBox(30.10, 59.80, 30.55, 60.09),
     "novosibirsk": BBox(82.75, 54.90, 83.15, 55.15),
     "ekaterinburg": BBox(60.45, 56.72, 60.75, 56.93),
@@ -144,6 +154,14 @@ REGIONS: dict[str, BBox] = {
 
 REGION_TITLES: dict[str, str] = {
     "moscow": "Москва",
+    "moscow-oblast": "Московская область",
+    "podolsk": "Подольск",
+    "khimki": "Химки",
+    "balashikha": "Балашиха",
+    "mytishchi": "Мытищи",
+    "lyubertsy": "Люберцы",
+    "korolev": "Королёв",
+    "odintsovo": "Одинцово",
     "spb": "Санкт-Петербург",
     "novosibirsk": "Новосибирск",
     "ekaterinburg": "Екатеринбург",

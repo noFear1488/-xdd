@@ -255,7 +255,13 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
     written = 0
     if args.out and result.leads:
-        written = write(result.leads, args.out, args.format)
+        written = write(
+            result.leads,
+            args.out,
+            args.format,
+            compact=args.compact,
+            sheet_title="ДЕМО - данные не настоящие" if args.demo else "Лиды",
+        )
 
     print_summary(result, new_count, updated, args.out if written else None)
     storage.close()
@@ -389,7 +395,7 @@ def cmd_export(args: argparse.Namespace) -> int:
         print("в базе нет записей под заданные условия", file=sys.stderr)
         storage.close()
         return 1
-    count = write(leads, args.out, args.format)
+    count = write(leads, args.out, args.format, compact=args.compact)
     print(f"выгружено {count} организаций в {args.out}")
     storage.close()
     return 0
@@ -528,6 +534,11 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--out", help="файл выгрузки (.csv, .xlsx или .json)")
     scan_parser.add_argument("--format", choices=["csv", "xlsx", "json"])
     scan_parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="короткий набор колонок — для просмотра с телефона",
+    )
+    scan_parser.add_argument(
         "--verify-sites",
         action="store_true",
         help="проверять, открывается ли указанный сайт (мёртвый сайт — тоже лид)",
@@ -555,6 +566,11 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export", help="выгрузить лидов из базы")
     export_parser.add_argument("--out", required=True, help="файл выгрузки")
     export_parser.add_argument("--format", choices=["csv", "xlsx", "json"])
+    export_parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="короткий набор колонок — для просмотра с телефона",
+    )
     export_parser.add_argument("--region", help="фильтр по региону")
     export_parser.add_argument("--db", default="leads.db")
     add_filter_args(export_parser)
@@ -580,6 +596,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         return args.func(args)
+    except BrokenPipeError:
+        # Вывод оборвал получатель (`| head`) — это не ошибка работы.
+        try:
+            sys.stdout.close()
+        except BrokenPipeError:
+            pass
+        return 0
     except CliError as exc:
         print(str(exc), file=sys.stderr)
         return 2

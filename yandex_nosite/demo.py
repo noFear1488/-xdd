@@ -3,6 +3,9 @@
 Нужен для двух вещей: посмотреть весь конвейер и формат выгрузки до получения
 ключа, и прогонять тесты, не завися от внешнего сервиса. Данные синтетические,
 но структура ответа повторяет настоящую.
+
+Названия и телефоны намеренно сделаны заведомо нерабочими: демо-выгрузка не
+должна выглядеть как реальная база, по которой можно начать звонить.
 """
 
 from __future__ import annotations
@@ -92,9 +95,12 @@ class DemoTransport:
             site_template = rng.choice(_SITE_POOL)
             site = site_template.format(n=1000 + index) if site_template else ""
             has_phone = rng.random() > 0.12
+            # Единый нерабочий номер вместо случайного: случайный мог бы
+            # совпасть с чьим-то настоящим.
+            demo_phone = "+7 (000) 000-00-00"
             reviews = rng.choice([0, 0, 3, 7, 12, 25, 48, 140])
             name = (
-                f"{rng.choice(_NAME_PARTS_A)}-{rng.choice(_NAME_PARTS_B)} "
+                f"ДЕМО {rng.choice(_NAME_PARTS_A)}-{rng.choice(_NAME_PARTS_B)} "
                 f"№{index + 1}"
             )
             features.append(
@@ -103,20 +109,14 @@ class DemoTransport:
                     "geometry": {"type": "Point", "coordinates": [lon, lat]},
                     "properties": {
                         "name": name,
-                        "description": "Москва, демо-данные",
+                        "description": "демо-данные",
                         "CompanyMetaData": {
                             "id": f"demo-{abs(hash((text, index))) % 10**10}",
                             "name": name,
-                            "address": f"Москва, ул. Примерная, д. {index % 90 + 1}",
+                            "address": f"ДЕМО, ул. Примерная, д. {index % 90 + 1}",
                             "url": site,
                             "Phones": (
-                                [
-                                    {
-                                        "type": "phone",
-                                        "formatted": f"+7 (495) {rng.randint(100, 999)}-"
-                                        f"{rng.randint(10, 99)}-{rng.randint(10, 99)}",
-                                    }
-                                ]
+                                [{"type": "phone", "formatted": demo_phone}]
                                 if has_phone
                                 else []
                             ),
