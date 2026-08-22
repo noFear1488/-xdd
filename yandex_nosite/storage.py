@@ -50,6 +50,15 @@ CREATE INDEX IF NOT EXISTS idx_businesses_status ON businesses(site_status);
 CREATE INDEX IF NOT EXISTS idx_businesses_score ON businesses(lead_score DESC);
 CREATE INDEX IF NOT EXISTS idx_businesses_region ON businesses(region);
 
+CREATE TABLE IF NOT EXISTS outreach (
+    company_id TEXT NOT NULL,
+    channel    TEXT NOT NULL DEFAULT 'telegram',
+    status     TEXT NOT NULL,
+    note       TEXT,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (company_id, channel)
+);
+
 CREATE TABLE IF NOT EXISTS api_usage (
     day      TEXT PRIMARY KEY,
     requests INTEGER NOT NULL DEFAULT 0
@@ -144,6 +153,34 @@ class Storage:
             "SELECT day, requests FROM api_usage ORDER BY day DESC LIMIT ?", (limit,)
         ).fetchall()
         return [(row["day"], int(row["requests"])) for row in rows]
+
+    # -- учёт обращений -------------------------------------------------------
+
+    def mark_outreach(
+        self, company_id: str, status: str, note: str = "", channel: str = "telegram"
+    ) -> None:
+        self.conn.execute(
+            "INSERT INTO outreach (company_id, channel, status, note, updated_at)"
+            " VALUES (?,?,?,?,?)"
+            " ON CONFLICT(company_id, channel) DO UPDATE SET"
+            " status=excluded.status, note=excluded.note, updated_at=excluded.updated_at",
+            (company_id, channel, status, note, _now()),
+        )
+        self.conn.commit()
+
+    def contacted_ids(self, channel: str = "telegram") -> set[str]:
+        """Кому уже писали: повторное сообщение — верный способ получить жалобу."""
+        rows = self.conn.execute(
+            "SELECT company_id FROM outreach WHERE channel = ?", (channel,)
+        ).fetchall()
+        return {row["company_id"] for row in rows}
+
+    def outreach_counts(self, channel: str = "telegram") -> dict[str, int]:
+        rows = self.conn.execute(
+            "SELECT status, COUNT(*) AS n FROM outreach WHERE channel = ? GROUP BY status",
+            (channel,),
+        ).fetchall()
+        return {row["status"]: int(row["n"]) for row in rows}
 
     # -- база организаций -----------------------------------------------------
 

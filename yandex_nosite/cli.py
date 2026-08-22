@@ -20,6 +20,13 @@ from .export import write
 from .geo import REGION_TITLES, REGIONS, BBox, resolve_region
 from .models import Business
 from .osm import ATTRIBUTION, OverpassClient
+from .outreach import (
+    BATCH_SIZE,
+    DAILY_ADVICE,
+    DEFAULT_TEMPLATE,
+    prepare,
+    to_markdown,
+)
 from .pipeline import ScanConfig, ScanResult, dedupe_similar, scan, scan_osm
 from .presets import PRESET_TITLES, PRESETS, resolve_queries
 from .scoring import apply_score
@@ -489,6 +496,79 @@ def cmd_export(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_outreach(args: argparse.Namespace) -> int:
+    """Готовит порцию обращений и ведёт учёт: кому написали, кто ответил."""
+    storage = Storage(args.db)
+
+    if args.mark:
+        for company_id in args.mark:
+            storage.mark_outreach(company_id, args.status, args.note or "")
+        print(f"отмечено записей: {len(args.mark)} → {args.status}")
+        storage.close()
+        return 0
+
+    if args.show_status:
+        counts = storage.outreach_counts()
+        if not counts:
+            print("обращений пока не отмечено")
+        else:
+            print("Учёт обращений в Telegram:")
+            for status, count in sorted(counts.items(), key=lambda kv: -kv[1]):
+                print(f"  {status:<12}{count:>5}")
+        storage.close()
+        return 0
+
+    template = DEFAULT_TEMPLATE
+    if args.template:
+        file = Path(args.template)
+        if not file.is_file():
+            raise CliError(f"ошибка: файл шаблона не найден: {file}")
+        template = file.read_text(encoding="utf-8")
+
+    contacted = storage.contacted_ids()
+    candidates = [
+        business
+        for business in storage.iter_businesses(
+            statuses=resolve_statuses(args), region=args.region, min_score=args.min_score
+        )
+        if business.company_id not in contacted
+    ]
+    messages, skipped = prepare(
+        candidates, template, limit=args.limit or BATCH_SIZE, mobile_only=not args.any_phone
+    )
+
+    if not messages:
+        print(
+            "подходящих контактов не осталось: "
+            f"кандидатов {len(candidates)}, отсеяно {len(skipped)}",
+            file=sys.stderr,
+        )
+        storage.close()
+        return 1
+
+    target = Path(args.out) if args.out else Path("telegram-batch.md")
+    target.write_text(to_markdown(messages), encoding="utf-8")
+
+    print(f"Подготовлено обращений: {len(messages)} → {target}")
+    print(f"Темп: {DAILY_ADVICE}.")
+    print(
+        "Отправляете вручную: автоматическая массовая рассылка с личного аккаунта "
+        "нарушает правила Telegram и ведёт к ограничению аккаунта."
+    )
+    reasons: dict[str, int] = {}
+    for _, reason in skipped:
+        reasons[reason] = reasons.get(reason, 0) + 1
+    for reason, count in sorted(reasons.items(), key=lambda kv: -kv[1]):
+        print(f"  пропущено {count}: {reason}")
+    print("\nПосле отправки отметьте это в базе, чтобы не написать повторно:")
+    print(
+        f"  yandex-nosite outreach --db {args.db} --mark "
+        f"{messages[0].business.company_id} --status sent"
+    )
+    storage.close()
+    return 0
+
+
 def cmd_stats(args: argparse.Namespace) -> int:
     storage = Storage(args.db)
     total = storage.total()
@@ -680,6 +760,37 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser.add_argument("--db", default="leads.db")
     add_filter_args(export_parser)
     export_parser.set_defaults(func=cmd_export)
+
+    outreach_parser = subparsers.add_parser(
+        "outreach",
+        help="подготовить порцию персональных обращений в Telegram (отправка вручную)",
+    )
+    outreach_parser.add_argument("--db", default="leads.db")
+    outreach_parser.add_argument("--out", help="файл-чеклист (по умолчанию telegram-batch.md)")
+    outreach_parser.add_argument("--region", help="фильтр по региону")
+    outreach_parser.add_argument(
+        "--template", help="файл со своим шаблоном сообщения (плейсхолдеры {name}, {benefit})"
+    )
+    outreach_parser.add_argument(
+        "--any-phone",
+        action="store_true",
+        help="не отсеивать городские номера (по умолчанию только мобильные)",
+    )
+    outreach_parser.add_argument(
+        "--mark", nargs="+", metavar="ID", help="отметить обращения по id организаций"
+    )
+    outreach_parser.add_argument(
+        "--status",
+        default="sent",
+        choices=["sent", "replied", "refused", "no_telegram", "deal"],
+        help="статус для --mark",
+    )
+    outreach_parser.add_argument("--note", help="заметка к отметке")
+    outreach_parser.add_argument(
+        "--show-status", action="store_true", help="сводка по обращениям"
+    )
+    add_filter_args(outreach_parser)
+    outreach_parser.set_defaults(func=cmd_outreach)
 
     stats_parser = subparsers.add_parser("stats", help="статистика по базе и расходу квоты")
     stats_parser.add_argument("--db", default="leads.db")
