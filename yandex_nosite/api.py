@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -226,8 +227,8 @@ class SearchClient:
                 if "limit" in message.lower() or "лимит" in message.lower():
                     raise QuotaError(f"исчерпан лимит запросов ключа: {message}")
                 raise AuthError(
-                    f"ключ API отклонён (HTTP {status}): {message}. Проверьте, что ключ "
-                    "выдан для «Поиска по организациям» и активирован."
+                    f"ключ API отклонён (HTTP {status}): {message}. "
+                    + describe_key_problem(self.api_key)
                 )
             if status == 400:
                 raise YandexApiError(f"некорректный запрос: {_error_message(body)}")
@@ -249,11 +250,64 @@ class SearchClient:
         raise YandexApiError("не удалось выполнить запрос")  # pragma: no cover
 
 
+def describe_key_problem(api_key: str) -> str:
+    """Подсказка по отклонённому ключу.
+
+    У Яндекса несколько разных «Search API», и ключи от них не взаимозаменяемы.
+    Ключ Поиска по организациям — UUID из кабинета Яндекс Карт; ключ вида
+    AQVN... принадлежит сервисному аккаунту Yandex Cloud и к картам не подходит.
+    """
+    key = (api_key or "").strip()
+    if key.startswith("AQVN"):
+        return (
+            "Судя по формату (AQVN...), это API-ключ сервисного аккаунта Yandex Cloud "
+            "— он подходит для Cloud Search API (поиск по интернету), но не для "
+            "Поиска по организациям Яндекс Карт. Нужен ключ вида "
+            "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx из кабинета разработчика Яндекс Карт: "
+            "https://developer.tech.yandex.ru/services/ → «JavaScript API и HTTP Геокодер» "
+            "→ ключ для Search API."
+        )
+    if key.startswith("t1.") or key.startswith("y0_"):
+        return (
+            "Похоже, это IAM- или OAuth-токен Яндекса, а не ключ Search API Карт. "
+            "Нужен ключ вида xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx из кабинета "
+            "разработчика Яндекс Карт: https://developer.tech.yandex.ru/services/"
+        )
+    if not _looks_like_uuid(key):
+        return (
+            "Ключ Поиска по организациям выглядит как UUID "
+            "(xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx); присланный на него не похож. "
+            "Проверьте, что ключ взят в кабинете разработчика Яндекс Карт "
+            "(https://developer.tech.yandex.ru/services/) именно для Search API."
+        )
+    return (
+        "Проверьте, что ключ выдан для «Поиска по организациям» и активирован — "
+        "новый ключ начинает работать в течение примерно 15 минут после создания."
+    )
+
+
+_UUID_RE = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+)
+
+
+def _looks_like_uuid(value: str) -> bool:
+    return bool(_UUID_RE.match(value or ""))
+
+
+_XML_MESSAGE_RE = re.compile(r"<message>(.*?)</message>", re.DOTALL)
+
+
 def _error_message(body: bytes) -> str:
+    """Достаёт человекочитаемую причину. Яндекс отвечает то JSON, то XML."""
+    text = body.decode("utf-8", errors="replace").strip()
+    if not text:
+        return "нет тела ответа"
     try:
-        payload = json.loads(body.decode("utf-8"))
-    except Exception:
-        return body.decode("utf-8", errors="replace")[:200] or "нет тела ответа"
+        payload = json.loads(text)
+    except ValueError:
+        match = _XML_MESSAGE_RE.search(text)
+        return (match.group(1).strip() if match else text)[:300]
     if isinstance(payload, dict):
         return str(payload.get("message") or payload.get("error") or payload)[:300]
     return str(payload)[:300]

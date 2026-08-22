@@ -152,6 +152,57 @@ class ResponseTest(unittest.TestCase):
         self.assertEqual(response.found, 0)
         self.assertEqual(response.features, [])
 
+class KeyHintTest(unittest.TestCase):
+    """Ключи разных сервисов Яндекса не взаимозаменяемы — ошибка должна это объяснять."""
+
+    def test_cloud_service_account_key_recognized(self):
+        from yandex_nosite.api import describe_key_problem
+
+        hint = describe_key_problem("AQVNx000000000000000000000000000000000000")
+        self.assertIn("Yandex Cloud", hint)
+        self.assertIn("developer.tech.yandex.ru", hint)
+
+    def test_iam_token_recognized(self):
+        from yandex_nosite.api import describe_key_problem
+
+        self.assertIn("токен", describe_key_problem("t1.abcdef"))
+
+    def test_uuid_key_gets_activation_hint(self):
+        from yandex_nosite.api import describe_key_problem
+
+        hint = describe_key_problem("12345678-1234-1234-1234-123456789abc")
+        self.assertIn("активирован", hint)
+
+    def test_hint_included_in_auth_error(self):
+        transport = FakeTransport([(403, {"message": "Invalid api key"})])
+        client = SearchClient(
+            "AQVNxxxx", transport=transport, min_interval=0, sleep=lambda _: None
+        )
+        with self.assertRaises(AuthError) as ctx:
+            client.search("кафе", AREA)
+        self.assertIn("Yandex Cloud", str(ctx.exception))
+
+
+class ErrorMessageTest(unittest.TestCase):
+    def test_xml_error_body_is_unwrapped(self):
+        from yandex_nosite.api import _error_message
+
+        body = (
+            b'<?xml version="1.0" encoding="UTF-8"?><error><statusCode>403</statusCode>'
+            b"<error>Forbidden</error><message>Invalid api key</message></error>"
+        )
+        self.assertEqual(_error_message(body), "Invalid api key")
+
+    def test_json_error_body(self):
+        from yandex_nosite.api import _error_message
+
+        self.assertEqual(_error_message(b'{"message": "bad bbox"}'), "bad bbox")
+
+    def test_empty_body(self):
+        from yandex_nosite.api import _error_message
+
+        self.assertEqual(_error_message(b""), "нет тела ответа")
+
 
 if __name__ == "__main__":
     unittest.main()
