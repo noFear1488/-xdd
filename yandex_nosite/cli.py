@@ -19,7 +19,8 @@ from .api import (
 from .export import write
 from .geo import REGION_TITLES, REGIONS, BBox, resolve_region
 from .models import Business
-from .pipeline import ScanConfig, ScanResult, scan
+from .osm import ATTRIBUTION, OverpassClient
+from .pipeline import ScanConfig, ScanResult, dedupe_similar, scan, scan_osm
 from .presets import PRESET_TITLES, PRESETS, resolve_queries
 from .scoring import apply_score
 from .sitecheck import (
@@ -54,25 +55,37 @@ def load_dotenv(path: str | Path = ".env") -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
 
 
-def resolve_area(args: argparse.Namespace) -> tuple[BBox, str]:
-    """Определяет область поиска и её человекочитаемое имя."""
+def resolve_areas(args: argparse.Namespace) -> list[tuple[BBox, str]]:
+    """Определяет области поиска. --region принимает список через запятую."""
     if args.bbox:
-        return BBox.parse(args.bbox), args.region or "bbox"
+        return [(BBox.parse(args.bbox), args.region or "bbox")]
     if args.center:
         raw = args.center.replace(";", ",").split(",")
         if len(raw) != 2:
             raise CliError("ошибка: --center задаётся как 'долгота,широта'")
         lon, lat = float(raw[0]), float(raw[1])
-        return BBox.from_center(lon, lat, args.radius), args.region or "center"
+        return [(BBox.from_center(lon, lat, args.radius), args.region or "center")]
     if args.region:
-        try:
-            return resolve_region(args.region), args.region.lower()
-        except KeyError:
-            raise CliError(
-                f"ошибка: регион '{args.region}' неизвестен. "
-                "Список: yandex-nosite regions, либо задайте --bbox / --center."
-            )
+        areas: list[tuple[BBox, str]] = []
+        for name in args.region.split(","):
+            key = name.strip()
+            if not key:
+                continue
+            try:
+                areas.append((resolve_region(key), key.lower()))
+            except KeyError:
+                raise CliError(
+                    f"ошибка: регион '{key}' неизвестен. "
+                    "Список: yandex-nosite regions, либо задайте --bbox / --center."
+                )
+        if areas:
+            return areas
     raise CliError("ошибка: укажите область поиска: --region, --bbox или --center")
+
+
+def resolve_area(args: argparse.Namespace) -> tuple[BBox, str]:
+    """Первая из областей — для команд, работающих с одной областью."""
+    return resolve_areas(args)[0]
 
 
 def resolve_statuses(args: argparse.Namespace) -> tuple[str, ...]:
@@ -174,6 +187,13 @@ def make_progress(args: argparse.Namespace):
                     f" всего={event['leads_total']}",
                     file=sys.stderr,
                 )
+        elif kind == "osm_start":
+            print("\n▶ запрашиваю OpenStreetMap…", file=sys.stderr)
+        elif kind == "osm_fetched":
+            print(
+                f"  получено объектов: {event['elements']} (зеркало {event['mirror']})",
+                file=sys.stderr,
+            )
         elif kind == "verify_start":
             print(f"\n⏳ проверяю доступность {event['count']} сайтов…", file=sys.stderr)
         elif kind == "verify_done":
@@ -191,81 +211,142 @@ def make_progress(args: argparse.Namespace):
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
-    area, region_name = resolve_area(args)
-    queries = build_queries(args)
+    areas = resolve_areas(args)
     statuses = resolve_statuses(args)
+    storage = Storage(resolve_db(args), cache_ttl_days=args.cache_ttl)
+    progress = make_progress(args)
+    use_osm = args.source == "osm"
 
-    db_path = resolve_db(args)
-    storage = Storage(db_path, cache_ttl_days=args.cache_ttl)
-    client = make_client(args, storage)
+    queries = ["osm"] if use_osm else build_queries(args)
+    client = None if use_osm else make_client(args, storage)
+    osm_client = OverpassClient() if use_osm else None
 
-    width_km, height_km = area.km_size()
     if not args.quiet:
-        title = REGION_TITLES.get(region_name, region_name)
+        titles = ", ".join(REGION_TITLES.get(name, name) for _, name in areas)
+        source_title = (
+            "OpenStreetMap (бесплатно, без ключа)" if use_osm else "Яндекс Карты (Search API)"
+        )
+        print(f"Источник: {source_title}", file=sys.stderr)
         print(
-            f"Область: {title} ({width_km:.1f}×{height_km:.1f} км), "
-            f"рубрик: {len(queries)}, статусы лидов: "
-            f"{', '.join(STATUS_TITLES.get(s, s) for s in statuses)}",
+            f"Область: {titles}"
+            + ("" if use_osm else f", рубрик: {len(queries)}")
+            + f", статусы лидов: {', '.join(STATUS_TITLES.get(s, s) for s in statuses)}",
             file=sys.stderr,
         )
         if args.demo:
             print("Режим: ДЕМО — данные синтетические, к API обращений нет", file=sys.stderr)
-        else:
-            used_today = storage.requests_today()
+        elif not use_osm:
             print(
-                f"Запросов к API сегодня: {used_today} из {FREE_DAILY_LIMIT} "
-                f"(бесплатный лимит), бюджет прогона: {args.max_requests}",
+                f"Запросов к API сегодня: {storage.requests_today()} из {FREE_DAILY_LIMIT}, "
+                f"бюджет прогона: {args.max_requests}",
                 file=sys.stderr,
             )
 
-    config = ScanConfig(
-        queries=queries,
-        area=area,
-        region=region_name,
-        lead_statuses=statuses,
-        max_depth=args.max_depth,
-        min_tile_km=args.min_tile_km,
-        page_size=min(args.page_size, MAX_RESULTS_PER_REQUEST),
-        deep_paging=not args.no_deep_paging,
-        verify_sites=args.verify_sites,
-        include_closed=args.include_closed,
-        min_score=args.min_score,
-        limit=args.limit,
-    )
-
-    def record() -> None:
-        if not args.demo:
-            storage.record_requests(client.stats["requests"])
+    total = ScanResult()
+    collected: dict[str, Business] = {}
 
     try:
-        result = scan(client, config, make_progress(args))
+        for area, region_name in areas:
+            remaining = None
+            if args.limit:
+                remaining = args.limit - len(collected)
+                if remaining <= 0:
+                    break
+            config = ScanConfig(
+                queries=queries,
+                area=area,
+                region=region_name,
+                lead_statuses=statuses,
+                max_depth=args.max_depth,
+                min_tile_km=args.min_tile_km,
+                page_size=min(args.page_size, MAX_RESULTS_PER_REQUEST),
+                deep_paging=not args.no_deep_paging,
+                verify_sites=args.verify_sites,
+                include_closed=args.include_closed,
+                min_score=args.min_score,
+                with_phone=args.with_phone,
+                no_chains=args.no_chains,
+                limit=remaining,
+            )
+            if not args.quiet and len(areas) > 1:
+                print(
+                    f"\n=== {REGION_TITLES.get(region_name, region_name)} ===",
+                    file=sys.stderr,
+                )
+            result = scan_osm(osm_client, config, progress) if use_osm else scan(
+                client, config, progress
+            )
+            _merge(total, result, collected, region_name)
+            if result.stopped_early and not use_osm:
+                total.stopped_early = True
+                total.stop_reason = result.stop_reason
+                break
     except YandexApiError as exc:
-        record()
+        _record_usage(args, storage, client)
         storage.close()
         print(f"ошибка API: {exc}", file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        record()
+        _record_usage(args, storage, client)
         storage.close()
         print("\nпрервано пользователем", file=sys.stderr)
         return 130
 
-    record()
-    new_count, updated = storage.save_many(result.leads, region_name)
+    _record_usage(args, storage, client)
+
+    leads = sorted(collected.values(), key=lambda b: (-b.lead_score, b.name))
+    if args.limit:
+        leads = leads[: args.limit]
+    total.leads = leads
+
+    region_label = ",".join(name for _, name in areas)
+    new_count, updated = storage.save_many(leads, region_label)
 
     written = 0
-    if args.out and result.leads:
+    if args.out and leads:
         written = write(
-            result.leads,
+            leads,
             args.out,
             args.format,
             compact=args.compact,
             sheet_title="ДЕМО - данные не настоящие" if args.demo else "Лиды",
         )
 
-    print_summary(result, new_count, updated, args.out if written else None)
+    print_summary(total, new_count, updated, args.out if written else None)
+    if use_osm:
+        print(f"Источник данных: {ATTRIBUTION}")
     storage.close()
     return 0
+
+
+def _merge(
+    total: ScanResult,
+    result: ScanResult,
+    collected: dict[str, Business],
+    region: str,
+) -> None:
+    """Складывает результат одной области в общий итог, без дублей."""
+    total.seen_total += result.seen_total
+    total.with_site += result.with_site
+    total.skipped_closed += result.skipped_closed
+    total.duplicate_hits += result.duplicate_hits
+    total.tiles_visited += result.tiles_visited
+    total.requests += result.requests
+    total.cache_hits += result.cache_hits
+    added = 0
+    for business in result.leads:
+        if business.company_id not in collected:
+            collected[business.company_id] = business
+            added += 1
+    total.per_query[region] = added
+
+
+def _record_usage(
+    args: argparse.Namespace, storage: Storage, client: SearchClient | None
+) -> None:
+    """Расход квоты учитывается только для платного источника."""
+    if client is not None and not args.demo:
+        storage.record_requests(client.stats["requests"])
 
 
 def print_summary(
@@ -388,9 +469,16 @@ def cmd_export(args: argparse.Namespace) -> int:
             statuses=statuses,
             region=args.region,
             min_score=args.min_score,
-            limit=args.limit,
+            limit=None,
         )
     )
+    if args.with_phone:
+        leads = [b for b in leads if b.phones]
+    if args.no_chains:
+        leads = [b for b in leads if "сетевая точка" not in b.categories]
+    leads = dedupe_similar(leads)
+    if args.limit:
+        leads = leads[: args.limit]
     if not leads:
         print("в базе нет записей под заданные условия", file=sys.stderr)
         storage.close()
@@ -506,7 +594,17 @@ def add_filter_args(parser: argparse.ArgumentParser) -> None:
         help=f"явный список статусов через запятую: {', '.join(STATUS_TITLES)}",
     )
     group.add_argument("--min-score", type=int, default=0, help="минимальная оценка лида")
+    group.add_argument(
+        "--with-phone",
+        action="store_true",
+        help="только организации с телефоном — для обзвона остальные бесполезны",
+    )
     group.add_argument("--limit", type=int, help="ограничение на число организаций")
+    group.add_argument(
+        "--no-chains",
+        action="store_true",
+        help="исключить точки сетей — у сети сайт почти наверняка есть",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -547,6 +645,13 @@ def build_parser() -> argparse.ArgumentParser:
     scan_parser.add_argument("--no-deep-paging", action="store_true")
     scan_parser.add_argument("--min-tile-km", type=float, default=0.5)
     scan_parser.add_argument("--quiet", action="store_true")
+    scan_parser.add_argument(
+        "--source",
+        choices=["yandex", "osm"],
+        default="yandex",
+        help="источник данных: yandex (Search API, платный) или osm "
+        "(OpenStreetMap через Overpass — бесплатно и без ключа)",
+    )
     scan_parser.set_defaults(func=cmd_scan)
 
     plan_parser = subparsers.add_parser(

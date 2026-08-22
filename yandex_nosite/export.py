@@ -31,7 +31,8 @@ COLUMN_TITLES: dict[str, str] = {
     "closed": "Закрыт",
     "lon": "Долгота",
     "lat": "Широта",
-    "maps_url": "Карточка на картах",
+    "maps_url": "Найти на Яндекс Картах",
+    "source_url": "Объект в источнике",
     "company_id": "ID организации",
     "query": "Поисковый запрос",
 }
@@ -144,6 +145,7 @@ _COLUMN_WIDTHS: dict[str, int] = {
     "lon": 12,
     "lat": 12,
     "maps_url": 44,
+    "source_url": 44,
     "company_id": 20,
     "query": 22,
 }

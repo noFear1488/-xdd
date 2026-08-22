@@ -109,6 +109,11 @@ def score(business: Business, *, site_alive: str | None = None) -> tuple[int, li
         value += 8
         reasons.append("ниша с высоким спросом на сайт")
 
+    if "сетевая точка" in business.categories:
+        # Сеть: сайт почти наверняка есть, просто не указан в источнике.
+        value -= 25
+        reasons.append("сетевая точка — сайт, скорее всего, есть у сети")
+
     if business.closed:
         value -= 40
         reasons.append("организация закрыта")

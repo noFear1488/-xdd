@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import urllib.parse
 from dataclasses import dataclass, field, asdict
 from typing import Any
 
@@ -39,7 +40,25 @@ class Business:
 
     @property
     def maps_url(self) -> str:
-        return f"https://yandex.ru/maps/org/{self.company_id}/" if self.company_id else ""
+        """Ссылка, по которой менеджер найдёт организацию на карте.
+
+        У записей Яндекса есть свой id карточки. У записей OSM его нет, поэтому
+        ссылка ведёт на поиск по названию и адресу — заодно видно, как
+        организация выглядит в Яндексе и не появился ли у неё сайт.
+        """
+        if not self.company_id:
+            return ""
+        if self.company_id.startswith("osm:"):
+            query = ", ".join(part for part in (self.name, self.address) if part)
+            return "https://yandex.ru/maps/?text=" + urllib.parse.quote(query)
+        return f"https://yandex.ru/maps/org/{self.company_id}/"
+
+    @property
+    def source_url(self) -> str:
+        """Ссылка на исходный объект в источнике данных."""
+        if self.company_id.startswith("osm:"):
+            return "https://www.openstreetmap.org/" + self.company_id[4:]
+        return self.maps_url
 
     def to_row(self) -> dict[str, Any]:
         """Плоская строка для CSV/XLSX — в порядке, удобном для обзвона."""
@@ -62,6 +81,7 @@ class Business:
             "lon": "" if self.lon is None else self.lon,
             "lat": "" if self.lat is None else self.lat,
             "maps_url": self.maps_url,
+            "source_url": self.source_url,
             "company_id": self.company_id,
             "query": self.query,
         }
@@ -69,6 +89,7 @@ class Business:
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["maps_url"] = self.maps_url
+        data["source_url"] = self.source_url
         return data
 
 
@@ -91,6 +112,7 @@ ROW_FIELDS: list[str] = [
     "lon",
     "lat",
     "maps_url",
+    "source_url",
     "company_id",
     "query",
 ]

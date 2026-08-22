@@ -191,5 +191,56 @@ class ScanTest(unittest.TestCase):
         self.assertEqual(set(result.per_query), {"кафе", "бар"})
 
 
+class DedupeTest(unittest.TestCase):
+    """В OSM один бизнес часто есть и точкой, и контуром здания."""
+
+    def _b(self, name, phone="+7 495 111-22-33", **kwargs):
+        from yandex_nosite.models import Business
+
+        return Business(
+            company_id=kwargs.pop("cid", name + phone),
+            name=name,
+            phones=[phone] if phone else [],
+            **kwargs,
+        )
+
+    def test_same_name_and_phone_collapsed(self):
+        from yandex_nosite.pipeline import dedupe_similar
+
+        items = [self._b("Лесной городок", cid="1"), self._b("Лесной городок", cid="2")]
+        self.assertEqual(len(dedupe_similar(items)), 1)
+
+    def test_richer_record_wins(self):
+        from yandex_nosite.pipeline import dedupe_similar
+
+        poor = self._b("Клиника", cid="1")
+        rich = self._b("Клиника", cid="2", address="ул. Ленина 1", hours="9-18")
+        self.assertEqual(dedupe_similar([poor, rich])[0].address, "ул. Ленина 1")
+
+    def test_same_name_different_phone_kept(self):
+        from yandex_nosite.pipeline import dedupe_similar
+
+        items = [self._b("Аптека", "+7 1"), self._b("Аптека", "+7 2")]
+        self.assertEqual(len(dedupe_similar(items)), 2)
+
+    def test_name_whitespace_and_case_normalized(self):
+        from yandex_nosite.pipeline import dedupe_similar
+
+        items = [self._b("Салон  Красоты"), self._b("салон красоты")]
+        self.assertEqual(len(dedupe_similar(items)), 1)
+
+    def test_phone_formatting_ignored(self):
+        from yandex_nosite.pipeline import dedupe_similar
+
+        items = [self._b("Кафе", "+7 (495) 111-22-33"), self._b("Кафе", "+74951112233")]
+        self.assertEqual(len(dedupe_similar(items)), 1)
+
+    def test_order_preserved(self):
+        from yandex_nosite.pipeline import dedupe_similar
+
+        items = [self._b("Б"), self._b("А"), self._b("Б")]
+        self.assertEqual([b.name for b in dedupe_similar(items)], ["Б", "А"])
+
+
 if __name__ == "__main__":
     unittest.main()

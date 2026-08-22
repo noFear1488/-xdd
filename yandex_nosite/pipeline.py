@@ -21,6 +21,7 @@ from .api import (
 from .geo import BBox
 from .models import Business, parse_feature
 from .scoring import apply_score
+from .osm import OverpassClient, OverpassError, to_business
 from .sitecheck import LEAD_STATUSES, classify, probe_many
 
 ProgressFn = Callable[[dict], None]
@@ -44,6 +45,8 @@ class ScanConfig:
     verify_timeout: float = 6.0
     include_closed: bool = False
     min_score: int = 0
+    with_phone: bool = False
+    no_chains: bool = False
     limit: int | None = None
 
 
@@ -106,11 +109,133 @@ def scan(
             apply_score(business)
 
     leads = [b for b in leads if b.lead_score >= config.min_score]
+    if config.with_phone:
+        leads = [b for b in leads if b.phones]
+    if config.no_chains:
+        leads = [b for b in leads if "сетевая точка" not in b.categories]
+    leads = dedupe_similar(leads)
     leads.sort(key=lambda b: (-b.lead_score, -(b.reviews or 0), b.name))
     if config.limit:
         leads = leads[: config.limit]
     result.leads = leads
     return result
+
+
+def scan_osm(
+    client: OverpassClient,
+    config: ScanConfig,
+    progress: ProgressFn | None = None,
+) -> ScanResult:
+    """Собирает лидов из OpenStreetMap — бесплатно и без ключа.
+
+    Overpass отдаёт всю область целиком, поэтому адаптивная сетка здесь не нужна:
+    делить область приходится только если запрос не укладывается в таймаут.
+    """
+    result = ScanResult()
+    collected: dict[str, Business] = {}
+    seen: set[str] = set()
+    emit = progress or (lambda event: None)
+
+    emit({"type": "osm_start", "area": config.area.to_api()})
+    try:
+        elements = client.fetch_area(config.area)
+    except OverpassError as exc:
+        result.stopped_early = True
+        result.stop_reason = str(exc)
+        emit({"type": "stopped", "reason": str(exc)})
+        return result
+
+    result.tiles_visited = client.stats.requests
+    result.requests = client.stats.requests
+    emit(
+        {
+            "type": "osm_fetched",
+            "elements": len(elements),
+            "mirror": client.stats.mirror_used,
+        }
+    )
+
+    for element in elements:
+        business = to_business(element, query=config.region or "osm")
+        if business is None:
+            continue
+        if business.company_id in seen:
+            result.duplicate_hits += 1
+            continue
+        seen.add(business.company_id)
+        result.seen_total += 1
+
+        status, domain = classify(business.url, business.links)
+        business.site_status = status
+        business.site_domain = domain
+        if status not in config.lead_statuses:
+            result.with_site += 1
+            continue
+        collected[business.company_id] = business
+
+    leads = list(collected.values())
+    if config.verify_sites:
+        _verify(leads, config, emit)
+    else:
+        for business in leads:
+            apply_score(business)
+
+    leads = [b for b in leads if b.lead_score >= config.min_score]
+    if config.with_phone:
+        leads = [b for b in leads if b.phones]
+    if config.no_chains:
+        leads = [b for b in leads if "сетевая точка" not in b.categories]
+    leads = dedupe_similar(leads)
+    leads.sort(key=lambda b: (-b.lead_score, b.name))
+    if config.limit:
+        leads = leads[: config.limit]
+    result.leads = leads
+    result.per_query[config.region or "osm"] = len(leads)
+    return result
+
+
+def dedupe_similar(businesses: list[Business]) -> list[Business]:
+    """Убирает повторы одного бизнеса.
+
+    В OSM одна организация нередко присутствует дважды: точкой и контуром
+    здания, с разными id. Одинаковые название и телефон — это один бизнес;
+    оставляем запись с большим объёмом данных.
+    """
+    best: dict[tuple[str, str], Business] = {}
+    order: list[tuple[str, str]] = []
+    for business in businesses:
+        key = (
+            " ".join(business.name.lower().split()),
+            _digits(business.phone),
+        )
+        if not key[0]:
+            continue
+        current = best.get(key)
+        if current is None:
+            best[key] = business
+            order.append(key)
+        elif _richness(business) > _richness(current):
+            best[key] = business
+    return [best[key] for key in order]
+
+
+def _digits(phone: str) -> str:
+    return "".join(ch for ch in phone if ch.isdigit())
+
+
+def _richness(business: Business) -> int:
+    """Сколько полезных полей заполнено — по этому выбирается лучший дубль."""
+    return sum(
+        bool(x)
+        for x in (
+            business.address,
+            business.hours,
+            business.phones,
+            business.url,
+            business.links,
+            business.categories,
+        )
+    )
 
 
 def _scan_query(
