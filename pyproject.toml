@@ -16,3 +16,6 @@ yandex-nosite = "yandex_nosite.cli:main"
 
 [tool.setuptools]
 packages = ["yandex_nosite"]
+
+[tool.setuptools.package-data]
+yandex_nosite = ["templates/*.html"]

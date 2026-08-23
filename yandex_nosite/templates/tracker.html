@@ -1,0 +1,453 @@
+<title>Пятнадцать в день</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600;700&family=PT+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root {
+  --paper: #FBFAF7;
+  --card: #FFFFFF;
+  --ink: #1B1F24;
+  --muted: #6E767C;
+  --faint: #8D9498;
+  --line: #E4E1DA;
+  --accent: #2F5D62;
+  --accent-soft: #E5EDEC;
+  --ok: #2E7D4F;
+  --no: #9B3B3B;
+  --sent: #6E767C;
+  --shadow: 0 1px 2px rgba(27, 31, 36, .05), 0 6px 16px rgba(27, 31, 36, .04);
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #15171B;
+    --card: #1C1F24;
+    --ink: #E9E7E2;
+    --muted: #9AA1A6;
+    --faint: #7C8388;
+    --line: #2C3037;
+    --accent: #79B3AF;
+    --accent-soft: #223A3A;
+    --ok: #6BBF8B;
+    --no: #D98A8A;
+    --sent: #9AA1A6;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 16px rgba(0, 0, 0, .25);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #15171B;
+  --card: #1C1F24;
+  --ink: #E9E7E2;
+  --muted: #9AA1A6;
+  --faint: #7C8388;
+  --line: #2C3037;
+  --accent: #79B3AF;
+  --accent-soft: #223A3A;
+  --ok: #6BBF8B;
+  --no: #D98A8A;
+  --sent: #9AA1A6;
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 6px 16px rgba(0, 0, 0, .25);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Golos Text", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { max-width: 680px; margin: 0 auto; padding: 0 16px 140px; }
+
+/* --- Шапка -------------------------------------------------------------- */
+
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: color-mix(in srgb, var(--paper) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.top-inner {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 14px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+h1 {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.counts {
+  display: flex;
+  gap: 13px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  flex-wrap: wrap;
+}
+.counts b { color: var(--ink); font-weight: 500; }
+.counts .v-ok { color: var(--ok); }
+.counts .v-no { color: var(--no); }
+.bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+.bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width .35s ease;
+}
+
+/* --- Порции ------------------------------------------------------------- */
+
+.batch { margin: 30px 0 0; }
+.batch-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: var(--faint);
+}
+.batch-title .num {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 13px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.batch-title::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* --- Карточка ----------------------------------------------------------- */
+
+.lead {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 15px 12px;
+  margin-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  border-left: 3px solid transparent;
+  transition: opacity .2s ease, border-color .2s ease;
+}
+.lead-head { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.lead h3 { margin: 0; font-size: 16.5px; font-weight: 600; letter-spacing: -0.01em; }
+.chip {
+  font-size: 11.5px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.addr, .tel { margin: 0; font-size: 13.5px; color: var(--muted); }
+.tel {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 14px;
+  color: var(--ink);
+  letter-spacing: .01em;
+  user-select: all;
+}
+
+.row { display: flex; gap: 8px; margin-top: 2px; }
+.btn {
+  flex: 1;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 500;
+  cursor: pointer;
+  text-decoration: none;
+  padding: 0 12px;
+  transition: background .15s ease, border-color .15s ease;
+}
+.btn-go { background: var(--accent); border-color: var(--accent); color: #fff; }
+:root[data-theme="dark"] .btn-go,
+:root:not([data-theme="light"]) .btn-go { color: #10221F; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .btn-go { color: #fff; }
+}
+.btn:hover { border-color: var(--accent); }
+.btn-go:hover { filter: brightness(1.07); }
+.btn:focus-visible, .mark:focus-visible, summary:focus-visible, .next:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.btn-copy.done { border-color: var(--ok); color: var(--ok); }
+
+.msg-wrap { border-top: 1px dashed var(--line); padding-top: 8px; }
+summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  list-style: none;
+  padding: 3px 0;
+}
+summary::-webkit-details-marker { display: none; }
+summary::before { content: "▸ "; color: var(--faint); }
+details[open] summary::before { content: "▾ "; }
+.msg {
+  font-family: "PT Serif", Georgia, serif;
+  font-size: 15px;
+  line-height: 1.62;
+  margin: 8px 0 2px;
+  color: var(--ink);
+  white-space: normal;
+}
+
+.marks { display: flex; gap: 6px; flex-wrap: wrap; }
+.mark {
+  min-height: 34px;
+  padding: 0 11px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.mark:hover { color: var(--ink); border-color: var(--faint); }
+
+.lead[data-status="sent"] { border-left-color: var(--sent); opacity: .72; }
+.lead[data-status="replied"] { border-left-color: var(--ok); }
+.lead[data-status="refused"] { border-left-color: var(--no); opacity: .5; }
+.lead[data-status="sent"] .mark[data-set="sent"] { color: var(--sent); border-color: var(--sent); font-weight: 500; }
+.lead[data-status="replied"] .mark[data-set="replied"] { color: var(--ok); border-color: var(--ok); font-weight: 500; }
+.lead[data-status="refused"] .mark[data-set="refused"] { color: var(--no); border-color: var(--no); font-weight: 500; }
+
+/* --- Кнопка «следующие» -------------------------------------------------- */
+
+.footer {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 20;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid var(--line);
+}
+.footer-inner { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 6px; }
+.next {
+  width: 100%;
+  min-height: 52px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter .15s ease;
+}
+:root[data-theme="dark"] .next { color: #10221F; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .next { color: #10221F; }
+}
+.next:hover { filter: brightness(1.07); }
+.next:disabled { background: var(--line); color: var(--faint); cursor: default; }
+.hint { font-size: 12px; color: var(--faint); text-align: center; margin: 0; }
+
+.note {
+  margin: 26px 0 0;
+  padding: 13px 15px;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 8px 8px 0;
+  font-size: 13.5px;
+  color: var(--ink);
+}
+.note p { margin: 0 0 6px; }
+.note p:last-child { margin-bottom: 0; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 96px;
+  transform: translate(-50%, 12px);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 9px 16px;
+  border-radius: 20px;
+  font-size: 13.5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+  z-index: 30;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
+
+<header class="top">
+  <div class="top-inner">
+    <h1>Пятнадцать в день</h1>
+    <div class="counts">
+      <span>выдано <b id="c-open">0</b>&thinsp;/&thinsp;<b>{{TOTAL}}</b></span>
+      <span>отпр. <b id="c-sent">0</b></span>
+      <span>ответ <b class="v-ok" id="c-ok">0</b></span>
+      <span>отказ <b class="v-no" id="c-no">0</b></span>
+    </div>
+    <div class="bar"><span id="bar"></span></div>
+  </div>
+</header>
+
+<main class="wrap">
+  {{SECTIONS}}
+
+  <div class="note">
+    <p>Отправляйте вручную и не больше порции в день. Автоматическая рассылка с личного аккаунта — прямой путь к его блокировке по жалобам.</p>
+    <p>Не ответили — второе сообщение не пишем.</p>
+  </div>
+</main>
+
+<div class="footer">
+  <div class="footer-inner">
+    <button class="next" id="next" type="button">Следующие 15</button>
+    <p class="hint" id="hint"></p>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  var batches = Array.prototype.slice.call(document.querySelectorAll(".batch"));
+  var nextBtn = document.getElementById("next");
+  var hint = document.getElementById("hint");
+  var toast = document.getElementById("toast");
+  var total = {{TOTAL}};
+
+  function say(message) {
+    toast.textContent = message;
+    toast.classList.add("show");
+    clearTimeout(say.timer);
+    say.timer = setTimeout(function () { toast.classList.remove("show"); }, 1800);
+  }
+
+  function refresh() {
+    var open = document.querySelectorAll(".batch:not([hidden]) .lead").length;
+    var counts = { sent: 0, replied: 0, refused: 0 };
+    document.querySelectorAll(".lead").forEach(function (lead) {
+      var status = lead.getAttribute("data-status");
+      if (counts.hasOwnProperty(status)) counts[status] += 1;
+    });
+    document.getElementById("c-open").textContent = open;
+    document.getElementById("c-sent").textContent = counts.sent;
+    document.getElementById("c-ok").textContent = counts.replied;
+    document.getElementById("c-no").textContent = counts.refused;
+    document.getElementById("bar").style.width = (open / total * 100) + "%";
+
+    var left = batches.filter(function (b) { return b.hasAttribute("hidden"); }).length;
+    if (left === 0) {
+      nextBtn.disabled = true;
+      nextBtn.textContent = "Все контакты открыты";
+      hint.textContent = "Больше в базе нет — соберите новые города через scan";
+    } else {
+      hint.textContent = "осталось порций: " + left;
+    }
+  }
+
+  nextBtn.addEventListener("click", function () {
+    var hidden = batches.filter(function (b) { return b.hasAttribute("hidden"); })[0];
+    if (!hidden) return;
+    hidden.removeAttribute("hidden");
+    refresh();
+    hidden.scrollIntoView({ behavior: "smooth", block: "start" });
+    say("Открыта порция " + hidden.getAttribute("data-batch"));
+  });
+
+  document.addEventListener("click", function (event) {
+    var mark = event.target.closest(".mark");
+    if (mark) {
+      var lead = mark.closest(".lead");
+      var value = mark.getAttribute("data-set");
+      lead.setAttribute(
+        "data-status",
+        lead.getAttribute("data-status") === value ? "new" : value
+      );
+      refresh();
+      return;
+    }
+
+    var copy = event.target.closest(".btn-copy");
+    if (copy) {
+      var text = copy.closest(".lead").querySelector(".msg").innerText;
+      var done = function () {
+        copy.classList.add("done");
+        copy.textContent = "Скопировано";
+        say("Текст скопирован — вставьте в диалог");
+        setTimeout(function () {
+          copy.classList.remove("done");
+          copy.textContent = "Копировать";
+        }, 2200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+      } else {
+        fallback(text, done);
+      }
+    }
+  });
+
+  function fallback(text, done) {
+    var area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(area);
+    area.select();
+    try {
+      document.execCommand("copy");
+      done();
+    } catch (error) {
+      say("Скопируйте текст вручную из карточки");
+    }
+    document.body.removeChild(area);
+  }
+
+  refresh();
+})();
+</script>

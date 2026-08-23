@@ -25,6 +25,7 @@ from .outreach import (
     DAILY_ADVICE,
     DEFAULT_TEMPLATE,
     prepare,
+    to_html,
     to_markdown,
 )
 from .pipeline import ScanConfig, ScanResult, dedupe_similar, scan, scan_osm
@@ -525,16 +526,22 @@ def cmd_outreach(args: argparse.Namespace) -> int:
             raise CliError(f"ошибка: файл шаблона не найден: {file}")
         template = file.read_text(encoding="utf-8")
 
-    contacted = storage.contacted_ids()
+    page_mode = bool(args.out and str(args.out).lower().endswith(".html"))
+    contacted = set() if page_mode else storage.contacted_ids()
     candidates = [
         business
         for business in storage.iter_businesses(
             statuses=resolve_statuses(args), region=args.region, min_score=args.min_score
         )
         if business.company_id not in contacted
+        and (not args.no_chains or "сетевая точка" not in business.categories)
+        and (not args.with_phone or business.phones)
     ]
+    candidates = dedupe_similar(candidates)
+    # Страница ведёт учёт сама и показывает всех: порции раскрываются кнопкой.
+    portion = len(candidates) if page_mode else (args.limit or BATCH_SIZE)
     messages, skipped = prepare(
-        candidates, template, limit=args.limit or BATCH_SIZE, mobile_only=not args.any_phone
+        candidates, template, limit=portion, mobile_only=not args.any_phone
     )
 
     if not messages:
@@ -547,15 +554,21 @@ def cmd_outreach(args: argparse.Namespace) -> int:
         return 1
 
     target = Path(args.out) if args.out else Path("telegram-batch.md")
-    target.write_text(to_markdown(messages), encoding="utf-8")
+    if page_mode:
+        target.write_text(to_html(messages, opened=args.opened), encoding="utf-8")
+    else:
+        target.write_text(to_markdown(messages), encoding="utf-8")
 
-    if not args.no_mark:
+    if not args.no_mark and not page_mode:
         # Иначе следующий запуск выдаст ту же порцию. Статус «prepared» —
         # это «выдано в работу», а не «отправлено»: подтверждает уже человек.
         for message in messages:
             storage.mark_outreach(message.business.company_id, "prepared")
 
     print(f"Подготовлено обращений: {len(messages)} → {target}")
+    if page_mode:
+        batches = -(-len(messages) // BATCH_SIZE)
+        print(f"Страница-трекер: {batches} порций по {BATCH_SIZE}, кнопка открывает следующую.")
     print(f"Темп: {DAILY_ADVICE}.")
     print(
         "Отправляете вручную: автоматическая массовая рассылка с личного аккаунта "
@@ -566,10 +579,14 @@ def cmd_outreach(args: argparse.Namespace) -> int:
         reasons[reason] = reasons.get(reason, 0) + 1
     for reason, count in sorted(reasons.items(), key=lambda kv: -kv[1]):
         print(f"  пропущено {count}: {reason}")
-    if not args.no_mark:
+    if not args.no_mark and not page_mode:
         print(
             "\nЭти контакты помечены как выданные и в следующую порцию не попадут."
         )
+    if page_mode:
+        print("\nОтметки ведутся прямо на странице — в базе ничего помечать не нужно.")
+        storage.close()
+        return 0
     print("После отправки отметьте результат:")
     print(
         f"  yandex-nosite outreach --db {args.db} --mark "
@@ -776,7 +793,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="подготовить порцию персональных обращений в Telegram (отправка вручную)",
     )
     outreach_parser.add_argument("--db", default="leads.db")
-    outreach_parser.add_argument("--out", help="файл-чеклист (по умолчанию telegram-batch.md)")
+    outreach_parser.add_argument(
+        "--out",
+        help="файл: .md — чеклист на одну порцию, .html — страница-трекер со всеми "
+        "контактами и кнопкой «Следующие 15» (по умолчанию telegram-batch.md)",
+    )
     outreach_parser.add_argument("--region", help="фильтр по региону")
     outreach_parser.add_argument(
         "--template", help="файл со своим шаблоном сообщения (плейсхолдеры {name}, {benefit})"
@@ -798,6 +819,12 @@ def build_parser() -> argparse.ArgumentParser:
     outreach_parser.add_argument("--note", help="заметка к отметке")
     outreach_parser.add_argument(
         "--show-status", action="store_true", help="сводка по обращениям"
+    )
+    outreach_parser.add_argument(
+        "--opened",
+        type=int,
+        default=1,
+        help="сколько порций открыто сразу на странице-трекере (по умолчанию 1)",
     )
     outreach_parser.add_argument(
         "--no-mark",

@@ -9,11 +9,15 @@
 
 from __future__ import annotations
 
+import html
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable
 
 from .models import Business
+
+TEMPLATE_PATH = Path(__file__).parent / "templates" / "tracker.html"
 
 # Пороговые значения темпа. Это не техническое ограничение, а то, при каком
 # темпе живой человек не выглядит рассыльщиком.
@@ -235,3 +239,67 @@ def to_markdown(messages: list[Message], title: str = "Порция обраще
             "",
         ]
     return "\n".join(lines)
+
+
+# --- Страница-трекер ---------------------------------------------------------
+
+
+def _card(message: Message) -> str:
+    """Карточка одного контакта. Разметка — сам документ: клики по ней сохраняются."""
+    e = lambda value: html.escape(str(value), quote=True)
+    text = "<br>".join(html.escape(line) for line in message.text.split("\n"))
+    address = e(message.business.address) if message.business.address else "адрес не указан"
+    return f"""<article class="lead" data-status="new" data-id="{e(message.business.company_id)}">
+<div class="lead-head">
+<h3>{e(message.name)}</h3>
+<span class="chip">{e(message.category)}</span>
+</div>
+<p class="addr">{address}</p>
+<p class="tel">+{e(message.phone)}</p>
+<div class="row">
+<a class="btn btn-go" href="{e(message.link)}" target="_blank" rel="noopener">Написать</a>
+<button class="btn btn-copy" type="button">Копировать</button>
+</div>
+<details class="msg-wrap">
+<summary>Показать сообщение</summary>
+<p class="msg">{text}</p>
+</details>
+<div class="marks" role="group" aria-label="Отметка">
+<button class="mark" type="button" data-set="sent">отправлено</button>
+<button class="mark" type="button" data-set="replied">ответили</button>
+<button class="mark" type="button" data-set="refused">отказ</button>
+</div>
+</article>"""
+
+
+def to_html(
+    messages: list[Message],
+    *,
+    batch_size: int = BATCH_SIZE,
+    opened: int = 1,
+    template: str | None = None,
+) -> str:
+    """Собирает страницу: все контакты в разметке, порции раскрываются кнопкой.
+
+    Контакты кладутся в HTML целиком, а не рендерятся скриптом: у живого
+    документа сохраняется именно разметка, и то, что дорисовано на загрузке,
+    документом не является.
+    """
+    source = template if template is not None else TEMPLATE_PATH.read_text(encoding="utf-8")
+    batches = [
+        messages[i : i + batch_size] for i in range(0, len(messages), batch_size)
+    ]
+    sections = []
+    for index, batch in enumerate(batches, start=1):
+        hidden = "" if index <= max(1, opened) else " hidden"
+        cards = "\n".join(_card(message) for message in batch)
+        sections.append(
+            f'<section class="batch"{hidden} data-batch="{index}">\n'
+            f'<h2 class="batch-title"><span class="num">{index:02d}</span>'
+            f'<span>порция · {len(batch)} контактов</span></h2>\n{cards}\n</section>'
+        )
+    return (
+        source.replace("{{SECTIONS}}", "\n".join(sections))
+        .replace("{{TOTAL}}", str(len(messages)))
+        .replace("{{BATCHES}}", str(len(batches)))
+    )
