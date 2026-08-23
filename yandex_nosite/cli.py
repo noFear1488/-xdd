@@ -549,6 +549,12 @@ def cmd_outreach(args: argparse.Namespace) -> int:
     target = Path(args.out) if args.out else Path("telegram-batch.md")
     target.write_text(to_markdown(messages), encoding="utf-8")
 
+    if not args.no_mark:
+        # Иначе следующий запуск выдаст ту же порцию. Статус «prepared» —
+        # это «выдано в работу», а не «отправлено»: подтверждает уже человек.
+        for message in messages:
+            storage.mark_outreach(message.business.company_id, "prepared")
+
     print(f"Подготовлено обращений: {len(messages)} → {target}")
     print(f"Темп: {DAILY_ADVICE}.")
     print(
@@ -560,7 +566,11 @@ def cmd_outreach(args: argparse.Namespace) -> int:
         reasons[reason] = reasons.get(reason, 0) + 1
     for reason, count in sorted(reasons.items(), key=lambda kv: -kv[1]):
         print(f"  пропущено {count}: {reason}")
-    print("\nПосле отправки отметьте это в базе, чтобы не написать повторно:")
+    if not args.no_mark:
+        print(
+            "\nЭти контакты помечены как выданные и в следующую порцию не попадут."
+        )
+    print("После отправки отметьте результат:")
     print(
         f"  yandex-nosite outreach --db {args.db} --mark "
         f"{messages[0].business.company_id} --status sent"
@@ -782,12 +792,17 @@ def build_parser() -> argparse.ArgumentParser:
     outreach_parser.add_argument(
         "--status",
         default="sent",
-        choices=["sent", "replied", "refused", "no_telegram", "deal"],
+        choices=["prepared", "sent", "replied", "refused", "no_telegram", "deal"],
         help="статус для --mark",
     )
     outreach_parser.add_argument("--note", help="заметка к отметке")
     outreach_parser.add_argument(
         "--show-status", action="store_true", help="сводка по обращениям"
+    )
+    outreach_parser.add_argument(
+        "--no-mark",
+        action="store_true",
+        help="не помечать выданные контакты — та же порция выдастся снова",
     )
     add_filter_args(outreach_parser)
     outreach_parser.set_defaults(func=cmd_outreach)
