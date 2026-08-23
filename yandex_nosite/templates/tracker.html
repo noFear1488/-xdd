@@ -211,6 +211,25 @@ h1 {
   outline-offset: 2px;
 }
 .btn-copy.done { border-color: var(--ok); color: var(--ok); }
+.btn-go.done { filter: none; opacity: .9; }
+
+/* Показывается, только если песочница не дала открыть вкладку. */
+.fallback {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.45;
+  word-break: break-all;
+  user-select: all;
+  -webkit-user-select: all;
+  color: var(--ink);
+}
+.fallback b { display: block; font-family: "Golos Text", sans-serif; font-weight: 500;
+  font-size: 12px; color: var(--accent); margin-bottom: 3px; user-select: none; }
 
 .msg-wrap { border-top: 1px dashed var(--line); padding-top: 8px; }
 summary {
@@ -340,6 +359,7 @@ details[open] summary::before { content: "▾ "; }
   <div class="note">
     <p>Отправляйте вручную и не больше порции в день. Автоматическая рассылка с личного аккаунта — прямой путь к его блокировке по жалобам.</p>
     <p>Не ответили — второе сообщение не пишем.</p>
+    <p>Если «Написать» не открывает Telegram — просмотрщик запрещает новые вкладки; ссылка при этом копируется и остаётся в карточке, её можно вставить в браузер.</p>
   </div>
 </main>
 
@@ -399,7 +419,61 @@ details[open] summary::before { content: "▾ "; }
     say("Открыта порция " + hidden.getAttribute("data-batch"));
   });
 
+  function copyText(text, done, fail) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text, done, fail); });
+    } else {
+      legacyCopy(text, done, fail);
+    }
+  }
+
+  function legacyCopy(text, done, fail) {
+    var area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.cssText = "position:fixed;top:0;left:0;opacity:0";
+    document.body.appendChild(area);
+    area.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (error) { ok = false; }
+    document.body.removeChild(area);
+    (ok ? done : (fail || done))();
+  }
+
   document.addEventListener("click", function (event) {
+    var go = event.target.closest(".btn-go");
+    if (go) {
+      // Просмотрщик артефактов держит страницу в песочнице, которая может
+      // запретить открытие новой вкладки. Тогда клик не сделал бы ничего —
+      // поэтому ссылка копируется и показывается прямо в карточке.
+      event.preventDefault();
+      var url = go.getAttribute("href");
+      var win = null;
+      try { win = window.open(url, "_blank", "noopener"); } catch (error) { win = null; }
+      if (win) return;
+
+      var lead = go.closest(".lead");
+      if (!lead.querySelector(".fallback")) {
+        var block = document.createElement("p");
+        block.className = "fallback";
+        block.innerHTML = "<b>Открыть вручную — ссылка скопирована:</b>";
+        block.appendChild(document.createTextNode(url));
+        go.closest(".row").insertAdjacentElement("afterend", block);
+      }
+      copyText(url, function () {
+        go.classList.add("done");
+        go.textContent = "Ссылка скопирована";
+        say("Ссылка скопирована — вставьте в браузер или в поиск Telegram");
+        setTimeout(function () {
+          go.classList.remove("done");
+          go.textContent = "Написать";
+        }, 2600);
+      }, function () {
+        say("Скопируйте ссылку из карточки вручную");
+      });
+      return;
+    }
+
     var mark = event.target.closest(".mark");
     if (mark) {
       var lead = mark.closest(".lead");
@@ -424,29 +498,9 @@ details[open] summary::before { content: "▾ "; }
           copy.textContent = "Копировать";
         }, 2200);
       };
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
-      } else {
-        fallback(text, done);
-      }
+      copyText(text, done, function () { say("Скопируйте текст вручную из карточки"); });
     }
   });
-
-  function fallback(text, done) {
-    var area = document.createElement("textarea");
-    area.value = text;
-    area.setAttribute("readonly", "");
-    area.style.cssText = "position:fixed;top:0;left:0;opacity:0";
-    document.body.appendChild(area);
-    area.select();
-    try {
-      document.execCommand("copy");
-      done();
-    } catch (error) {
-      say("Скопируйте текст вручную из карточки");
-    }
-    document.body.removeChild(area);
-  }
 
   refresh();
 })();
