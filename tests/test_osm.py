@@ -295,5 +295,31 @@ class PickupPointTest(unittest.TestCase):
         self.assertIsNone(to_business(element(name="Постамат", amenity="parcel_locker")))
 
 
+class RelevanceTest(unittest.TestCase):
+    """Госучреждению или банку сайт не продать — такие записи не лиды."""
+
+    def test_public_institutions_skipped_at_parse(self):
+        for tags in (
+            {"name": "Администрация", "office": "government"},
+            {"name": "Сбербанк", "amenity": "bank"},
+            {"name": "Центр соцзащиты", "amenity": "social_facility"},
+        ):
+            self.assertIsNone(to_business({"type": "node", "id": 1, "lat": 55.4,
+                                           "lon": 37.5, "tags": tags}), tags)
+
+    def test_existing_records_filtered_by_title(self):
+        from yandex_nosite.models import Business
+        from yandex_nosite.osm import is_relevant
+
+        self.assertFalse(is_relevant(Business(company_id="1", name="X", categories=["government"])))
+        self.assertFalse(is_relevant(Business(company_id="1", name="X", categories=["bank"])))
+        self.assertTrue(is_relevant(Business(company_id="1", name="X", categories=["кафе"])))
+
+    def test_new_translations(self):
+        self.assertEqual(category_of({"shop": "seafood"})[1], "рыба и морепродукты")
+        self.assertEqual(category_of({"shop": "tobacco"})[1], "табачный")
+        self.assertEqual(category_of({"craft": "photographer"})[1], "фотограф")
+
+
 if __name__ == "__main__":
     unittest.main()

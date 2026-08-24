@@ -19,7 +19,7 @@ from .api import (
 from .export import write
 from .geo import REGION_TITLES, REGIONS, BBox, resolve_region
 from .models import Business
-from .osm import ATTRIBUTION, OverpassClient
+from .osm import ATTRIBUTION, OverpassClient, is_relevant
 from .outreach import (
     BATCH_SIZE,
     DAILY_ADVICE,
@@ -484,6 +484,7 @@ def cmd_export(args: argparse.Namespace) -> int:
         leads = [b for b in leads if b.phones]
     if args.no_chains:
         leads = [b for b in leads if "сетевая точка" not in b.categories]
+    leads = [b for b in leads if is_relevant(b)]
     leads = dedupe_similar(leads)
     if args.limit:
         leads = leads[: args.limit]
@@ -536,6 +537,7 @@ def cmd_outreach(args: argparse.Namespace) -> int:
         if business.company_id not in contacted
         and (not args.no_chains or "сетевая точка" not in business.categories)
         and (not args.with_phone or business.phones)
+        and is_relevant(business)
     ]
     candidates = dedupe_similar(candidates)
     # Страница ведёт учёт сама и показывает всех: порции раскрываются кнопкой.

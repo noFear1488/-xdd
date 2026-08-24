@@ -85,6 +85,10 @@ SKIP_VALUES: frozenset[str] = frozenset(
         # а не самостоятельные бизнесы.
         "outpost", "parcel_locker", "post_depot", "money_transfer",
         "payment_terminal", "vending_machine", "bureau_de_change",
+        # Госструктуры, банки и социальные учреждения: сайт им не продать.
+        "government", "social_facility", "blood_donation", "political_party",
+        "bank", "mortuary", "mall", "public_bath", "nursing_home",
+        "research_institute", "diplomatic", "religion", "association",
     }
 )
 
@@ -180,7 +184,75 @@ CATEGORY_TITLES: dict[str, str] = {
     "painter": "малярные работы",
     "window_construction": "окна",
     "shoemaker": "сапожник",
+    "electronics_repair": "ремонт электроники",
+    "tobacco": "табачный",
+    "photographer": "фотограф",
+    "internet_cafe": "интернет-кафе",
+    "sauna": "сауна",
+    "hookah_lounge": "кальянная",
+    "seafood": "рыба и морепродукты",
+    "nuts": "орехи и сухофрукты",
+    "department_store": "универмаг",
+    "photographic_laboratory": "фотолаборатория",
+    "tool_hire": "прокат инструмента",
+    "nutrition_supplements": "спортивное питание",
+    "coffee": "кофе",
+    "tea": "чай",
+    "wine": "винотека",
+    "beverages": "напитки",
+    "chemist": "бытовая химия",
+    "perfumery": "парфюмерия",
+    "houseware": "посуда",
+    "interior_decoration": "декор для дома",
+    "curtain": "шторы",
+    "lighting": "светотехника",
+    "flooring": "напольные покрытия",
+    "tiles": "плитка",
+    "trade": "оптовая торговля",
+    "storage_rental": "аренда складов",
+    "swimming_pool": "бассейн",
+    "water_park": "аквапарк",
+    "amusement_arcade": "игровой клуб",
+    "escape_game": "квесты",
+    "cinema": "кинотеатр",
+    "theatre": "театр",
+    "nightclub": "ночной клуб",
+    "ice_cream": "мороженое",
+    "food_court": "фудкорт",
+    "biergarten": "пивная",
+    "car_rental": "аренда авто",
+    "boat_rental": "аренда лодок",
+    "bicycle_rental": "прокат велосипедов",
+    "physiotherapist": "физиотерапия",
+    "psychotherapist": "психотерапевт",
+    "podiatrist": "подолог",
+    "speech_therapist": "логопед",
+    "rehabilitation": "реабилитация",
+    "sample_collection": "заборный пункт анализов",
+    "laboratory": "лаборатория",
+    "apartment": "апартаменты",
+    "motel": "мотель",
+    "camp_site": "кемпинг",
+    "attraction": "достопримечательность",
+    "artwork": "арт-объект",
+    "museum": "музей",
 }
+
+# Рубрики, уже сохранённые в базе до появления фильтра выше. Сверяются
+# с готовым названием рубрики, поэтому чинят и старые записи тоже.
+SKIP_CATEGORY_TITLES: frozenset[str] = frozenset(
+    {
+        "government", "social facility", "blood donation", "political party",
+        "bank", "mortuary", "mall", "public bath", "nursing home",
+        "research institute", "diplomatic", "religion", "association",
+        "townhall", "public building",
+    }
+)
+
+
+def is_relevant(business: Business) -> bool:
+    """Годится ли организация для предложения сайта."""
+    return (business.category or "").lower() not in SKIP_CATEGORY_TITLES
 
 
 class OverpassError(RuntimeError):
