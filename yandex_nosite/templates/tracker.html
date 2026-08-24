@@ -419,6 +419,16 @@ details[open] summary::before { content: "▾ "; }
     say("Открыта порция " + hidden.getAttribute("data-batch"));
   });
 
+  function messageText(lead) {
+    // Свёрнутый <details> не рендерится, и innerText у него пустой —
+    // текст берём из разметки, возвращая переносы строк на место.
+    var source = lead.querySelector(".msg").innerHTML;
+    var plain = source.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "");
+    var decoder = document.createElement("textarea");
+    decoder.innerHTML = plain;
+    return decoder.value.trim();
+  }
+
   function copyText(text, done, fail) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(text).then(done, function () { legacyCopy(text, done, fail); });
@@ -488,7 +498,7 @@ details[open] summary::before { content: "▾ "; }
 
     var copy = event.target.closest(".btn-copy");
     if (copy) {
-      var text = copy.closest(".lead").querySelector(".msg").innerText;
+      var text = messageText(copy.closest(".lead"));
       var done = function () {
         copy.classList.add("done");
         copy.textContent = "Скопировано";
