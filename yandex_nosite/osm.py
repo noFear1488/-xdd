@@ -89,6 +89,7 @@ SKIP_VALUES: frozenset[str] = frozenset(
         "government", "social_facility", "blood_donation", "political_party",
         "bank", "mortuary", "mall", "public_bath", "nursing_home",
         "research_institute", "diplomatic", "religion", "association",
+        "ngo", "charity", "guide",
     }
 )
 
@@ -236,6 +237,35 @@ CATEGORY_TITLES: dict[str, str] = {
     "attraction": "достопримечательность",
     "artwork": "арт-объект",
     "museum": "музей",
+    "childcare": "детский сад",
+    "dancing_school": "школа танцев",
+    "music_school": "музыкальная школа",
+    "language_school": "языковая школа",
+    "tutoring": "репетиторский центр",
+    "training": "учебный центр",
+    "handicraft": "рукоделие",
+    "hookah": "кальянная",
+    "jeweller": "ювелирная мастерская",
+    "key_cutter": "изготовление ключей",
+    "logistics": "логистика",
+    "newsagent": "пресса",
+    "psychologist": "психолог",
+    "trailer": "прицепы",
+    "vehicle_inspection": "техосмотр",
+    "moving_company": "переезды",
+    "it": "ит-компания",
+    "telecommunication": "связь",
+    "construction_company": "строительная компания",
+    "architect": "архитектурное бюро",
+    "engineer": "инженерное бюро",
+    "surveyor": "кадастровые работы",
+    "insurance_agency": "страховое агентство",
+    "financial": "финансовые услуги",
+    "coworking": "коворкинг",
+    "insulation": "утепление",
+    "roofer": "кровельные работы",
+    "metal_construction": "металлоконструкции",
+    "insurance_broker": "страховой брокер",
 }
 
 # Рубрики, уже сохранённые в базе до появления фильтра выше. Сверяются
@@ -245,7 +275,7 @@ SKIP_CATEGORY_TITLES: frozenset[str] = frozenset(
         "government", "social facility", "blood donation", "political party",
         "bank", "mortuary", "mall", "public bath", "nursing home",
         "research institute", "diplomatic", "religion", "association",
-        "townhall", "public building",
+        "townhall", "public building", "ngo", "charity", "guide",
     }
 )
 
