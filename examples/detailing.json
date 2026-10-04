@@ -1,0 +1,89 @@
+{
+  "name": "Твич стайл детейлинг",
+  "parse_mode": "HTML",
+  "handlers": [
+    {
+      "trigger": "command",
+      "match": "start",
+      "reply": "Приветствую, я мастер детейлинга Твич стайл Промт Юзер Менеджмент! Какой у вас вопрос?",
+      "columns": 1,
+      "buttons": [
+        {
+          "text": "🚗 Записаться на осмотр",
+          "kind": "callback",
+          "value": "booking"
+        },
+        {
+          "text": "👤 Соединить с менеджером",
+          "kind": "callback",
+          "value": "manager"
+        }
+      ]
+    },
+    {
+      "trigger": "callback",
+      "match": "booking",
+      "edit": true,
+      "columns": 1,
+      "buttons": [
+        {
+          "text": "← Назад",
+          "kind": "callback",
+          "value": "home"
+        }
+      ],
+      "reply": "🚗 <b>Запись на осмотр</b>\n\nЗапись ведёт наш менеджер — он подберёт удобные дату и время. Вернитесь назад и нажмите «Соединить с менеджером»."
+    },
+    {
+      "trigger": "callback",
+      "match": "manager",
+      "edit": true,
+      "columns": 1,
+      "buttons": [
+        {
+          "text": "← Назад",
+          "kind": "callback",
+          "value": "home"
+        }
+      ],
+      "reply": "👤 <b>Связь с менеджером</b>\n\nКонтакт менеджера скоро появится здесь."
+    },
+    {
+      "trigger": "callback",
+      "match": "home",
+      "edit": true,
+      "columns": 1,
+      "buttons": [
+        {
+          "text": "🚗 Записаться на осмотр",
+          "kind": "callback",
+          "value": "booking"
+        },
+        {
+          "text": "👤 Соединить с менеджером",
+          "kind": "callback",
+          "value": "manager"
+        }
+      ],
+      "reply": "Приветствую, я мастер детейлинга Твич стайл Промт Юзер Менеджмент! Какой у вас вопрос?"
+    },
+    {
+      "trigger": "fallback",
+      "match": "",
+      "columns": 1,
+      "buttons": [
+        {
+          "text": "🚗 Записаться на осмотр",
+          "kind": "callback",
+          "value": "booking"
+        },
+        {
+          "text": "👤 Соединить с менеджером",
+          "kind": "callback",
+          "value": "manager"
+        }
+      ],
+      "reply": "Выберите, пожалуйста, вопрос кнопкой ниже 👇"
+    }
+  ]
+}
