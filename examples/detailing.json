@@ -1,6 +1,8 @@
 {
   "name": "Твич стайл детейлинг",
   "parse_mode": "HTML",
+  "ai_provider": "openai",
+  "ai_model": "",
   "handlers": [
     {
       "trigger": "fallback",

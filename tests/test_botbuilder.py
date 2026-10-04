@@ -51,6 +51,9 @@ class ValidateTest(unittest.TestCase):
         self.assertFalse(has_errors(issues))
         self.assertEqual([(i.level, i.field) for i in issues], [("warning", "buttons.0.value")])
 
+    def test_unknown_ai_provider(self):
+        self.assertEqual(errors(config(handler("fallback"), ai_provider="gigachat")), [(None, "ai_provider")])
+
     def test_ai_not_allowed_on_buttons(self):
         self.assertEqual(errors(config(handler("callback", "x", ai="..."))), [(0, "ai")])
 
@@ -247,6 +250,44 @@ class GeneratedBotTest(unittest.TestCase):
         self.assertEqual([c.text for c in calls], ["запасной", "запасной", "ок"])
         # неудачные реплики не копятся в истории — третий запрос видит только себя
         self.assertEqual([m["content"] for m in seen[2]["messages"]], ["три"])
+
+    def test_openai_provider(self):
+        cfg = config(handler("fallback", reply="запасной", ai="Ты — друг."), ai_provider="openai", ai_model="gpt-test")
+        module = load_module(generate(cfg))
+        seen = []
+
+        def answer(text, finish="stop"):
+            msg = types.SimpleNamespace(content=text, refusal=None)
+            return types.SimpleNamespace(choices=[types.SimpleNamespace(message=msg, finish_reason=finish)])
+
+        replies = [answer("Привет!"), answer("", "content_filter")]
+
+        class FakeOpenAI:
+            class chat:
+                class completions:
+                    @staticmethod
+                    async def create(**kwargs):
+                        seen.append(kwargs)
+                        return replies.pop(0)
+
+        module["ai_client"] = FakeOpenAI
+        bot = module["create_bot"]("42:TEST")
+        bot.session = FakeSession()
+        calls = self.chat(bot, module["create_dispatcher"](), "хай", "ещё")
+        self.assertEqual([c.text for c in calls], ["Привет!", "запасной"])
+        self.assertEqual(seen[0]["model"], "gpt-test")
+        self.assertEqual(seen[1]["messages"][0], {"role": "system", "content": "Ты — друг."})
+        self.assertEqual([m["role"] for m in seen[1]["messages"]], ["system", "user", "assistant", "user"])
+
+    def test_ai_without_key_still_starts_and_falls_back(self):
+        cfg = config(handler("fallback", reply="запасной", ai="..."), ai_provider="openai")
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            module = load_module(generate(cfg))  # импорт не должен падать без ключа
+            bot = module["create_bot"]("42:TEST")
+            bot.session = FakeSession()
+            with self.assertLogs(level="ERROR"):
+                calls = self.chat(bot, module["create_dispatcher"](), "хай")
+        self.assertEqual([c.text for c in calls], ["запасной"])
 
     def test_url_button(self):
         cfg = config(handler("command", "start", buttons=[{"text": "Сайт", "kind": "url", "value": "https://example.com"}]))

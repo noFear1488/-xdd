@@ -5,6 +5,8 @@
     {
       "name": "Мой бот",
       "parse_mode": "HTML",             # или "" — текст без разметки
+      "ai_provider": "anthropic",       # кто пишет ИИ-ответы: anthropic (Claude) или openai
+      "ai_model": "",                   # пусто — модель провайдера по умолчанию
       "handlers": [
         {
           "trigger": "command",         # command | text | callback | fallback
@@ -35,6 +37,10 @@ from pathlib import Path
 TRIGGERS = ("command", "text", "callback", "fallback")
 BUTTON_KINDS = ("callback", "url")
 PARSE_MODES = ("HTML", "")
+AI_PROVIDERS = {  # провайдер → (модель по умолчанию, переменная с ключом)
+    "anthropic": ("claude-opus-5-5", "ANTHROPIC_API_KEY"),
+    "openai": ("gpt-4o-mini", "OPENAI_API_KEY"),
+}
 
 COMMAND_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 USERNAME_RE = re.compile(r"^[a-z0-9_]{4,32}$")
@@ -45,6 +51,8 @@ MAX_TEXT = 4096  # лимит Telegram на длину сообщения
 STARTER = {
     "name": "Мой бот",
     "parse_mode": "HTML",
+    "ai_provider": "anthropic",
+    "ai_model": "",
     "handlers": [
         {
             "trigger": "command",
@@ -179,6 +187,8 @@ def normalize(config: dict) -> dict:
     return {
         "name": str(config.get("name", "")).strip() or "Бот",
         "parse_mode": str(config.get("parse_mode", "HTML")),
+        "ai_provider": str(config.get("ai_provider", "anthropic")),
+        "ai_model": str(config.get("ai_model", "")).strip(),
         "handlers": handlers,
     }
 
@@ -189,6 +199,9 @@ def validate(config: dict) -> list[Issue]:
 
     if cfg["parse_mode"] not in PARSE_MODES:
         issues.append(Issue(f"Неизвестный режим разметки: {cfg['parse_mode']!r}", field="parse_mode"))
+
+    if cfg["ai_provider"] not in AI_PROVIDERS:
+        issues.append(Issue(f"Неизвестный ИИ-провайдер: {cfg['ai_provider']!r}", field="ai_provider"))
 
     commands: dict[str, int] = {}
     callbacks: dict[str, int] = {}

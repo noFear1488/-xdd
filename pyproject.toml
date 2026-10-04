@@ -12,7 +12,7 @@ license = { text = "MIT" }
 dependencies = []
 
 [project.optional-dependencies]
-bots = ["aiogram>=3.4", "anthropic>=1.11"]
+bots = ["aiogram>=3.4", "anthropic>=1.11", "openai>=1.0"]
 
 [project.scripts]
 yandex-nosite = "yandex_nosite.cli:main"

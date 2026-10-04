@@ -6,21 +6,46 @@
 
 from __future__ import annotations
 
-from .schema import command_name, has_errors, normalize, text_variants, usernames, validate
+from .schema import AI_PROVIDERS, command_name, has_errors, normalize, text_variants, usernames, validate
 
 
 # Общий код ИИ-ответов: история диалога в памяти, отказ и сбои API — запасной ответ.
+# Разные провайдеры отличаются только вызовом модели (AI_CALL).
 AI_HELPER = """
-AI_MODEL = "claude-opus-5-5"
+AI_MODEL = {model!r}
 AI_HISTORY = 20  # сколько последних реплик помнить в каждом чате
-ai_client = anthropic.AsyncAnthropic()  # ключ — из переменной ANTHROPIC_API_KEY
+ai_client = None  # создаётся при первом сообщении: без ключа бот всё равно запустится
 ai_history = defaultdict(list)
 
 
 async def ai_reply(message, system, fallback):
+    global ai_client
     history = ai_history[message.chat.id]
-    history.append({"role": "user", "content": message.text or message.caption or "(сообщение без текста)"})
+    history.append({{"role": "user", "content": message.text or message.caption or "(сообщение без текста)"}})
     try:
+{call}
+    except Exception:  # сеть, лимиты, нет ключа — человеку всё равно надо ответить
+        logging.exception("ИИ недоступен, отвечаю запасным текстом")
+        history.pop()
+        return fallback
+    if refused or not text:
+        history.pop()
+        return fallback
+    text = text[:4096]  # лимит Telegram на сообщение
+    history.append({{"role": "assistant", "content": text}})
+    del history[:-AI_HISTORY]  # длина чётная — история всегда начинается с реплики пользователя
+    return text
+
+"""
+
+AI_IMPORTS = {
+    "anthropic": "import anthropic",
+    "openai": "from openai import AsyncOpenAI",
+}
+
+AI_CALL = {
+    "anthropic": """\
+        ai_client = ai_client or anthropic.AsyncAnthropic()  # ключ — из ANTHROPIC_API_KEY
         response = await ai_client.beta.messages.create(
             model=AI_MODEL,
             max_tokens=4000,
@@ -30,20 +55,20 @@ async def ai_reply(message, system, fallback):
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",  # если модель откажется отвечать — повторить на рекомендованной
         )
-    except Exception:  # сеть, лимиты, нет ключа (это TypeError) — человеку всё равно надо ответить
-        logging.exception("ИИ недоступен, отвечаю запасным текстом")
-        history.pop()
-        return fallback
-    text = "".join(block.text for block in response.content if block.type == "text").strip()
-    if response.stop_reason == "refusal" or not text:
-        history.pop()
-        return fallback
-    text = text[:4096]  # лимит Telegram на сообщение
-    history.append({"role": "assistant", "content": text})
-    del history[:-AI_HISTORY]  # длина чётная — история всегда начинается с реплики пользователя
-    return text
-
-""".splitlines()
+        text = "".join(block.text for block in response.content if block.type == "text").strip()
+        refused = response.stop_reason == "refusal"
+""",
+    "openai": """\
+        ai_client = ai_client or AsyncOpenAI()  # ключ — из OPENAI_API_KEY
+        response = await ai_client.chat.completions.create(
+            model=AI_MODEL,
+            messages=[{"role": "system", "content": system}, *history],
+        )
+        choice = response.choices[0]
+        text = (choice.message.content or "").strip()
+        refused = choice.finish_reason == "content_filter" or bool(getattr(choice.message, "refusal", None))
+""",
+}
 
 
 class ConfigError(ValueError):
@@ -125,6 +150,7 @@ def generate(config: dict) -> str:
     )
     parse_mode = repr(cfg["parse_mode"]) if cfg["parse_mode"] else "None"
     has_ai = any(h["ai"] for h in cfg["handlers"])
+    provider = cfg["ai_provider"]
 
     types = ["CallbackQuery", "Message"] if has_callbacks else ["Message"]
     out = [
@@ -134,7 +160,7 @@ def generate(config: dict) -> str:
         "import asyncio",
         "import logging",
         "import os",
-        *(["from collections import defaultdict", "", "import anthropic"] if has_ai else []),
+        *(["from collections import defaultdict", "", AI_IMPORTS[provider]] if has_ai else []),
         "",
         "from aiogram import Bot, Dispatcher, F, Router",
         "from aiogram.client.default import DefaultBotProperties",
@@ -146,7 +172,8 @@ def generate(config: dict) -> str:
     out += ["", "router = Router()", ""]
 
     if has_ai:
-        out += AI_HELPER
+        model = cfg["ai_model"] or AI_PROVIDERS[provider][0]
+        out += AI_HELPER.format(model=model, call=AI_CALL[provider].rstrip()).splitlines()
 
     if has_buttons:
         out += [

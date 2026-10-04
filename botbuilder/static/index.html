@@ -135,6 +135,11 @@ pre.code { margin: 0; flex: 1; overflow: auto; padding: 14px; background: var(--
     <option value="HTML">HTML-разметка</option>
     <option value="">Без разметки</option>
   </select>
+  <select id="provider" style="width:auto" title="Кто пишет ИИ-ответы">
+    <option value="anthropic">ИИ: Claude</option>
+    <option value="openai">ИИ: OpenAI</option>
+  </select>
+  <input id="model" style="width:150px;font-family:var(--mono);font-size:12.5px" title="Модель ИИ (пусто — по умолчанию)">
   <span class="saved" id="saved"></span>
   <span class="grow"></span>
   <input class="token" id="token" type="password" placeholder="Токен от @BotFather" autocomplete="off">
@@ -309,11 +314,11 @@ function renderEditor() {
       <div class="hint">Такие блоки проверяются раньше остальных: так можно ответить конкретному человеку по-особому.</div>
     </div>
     ${t === "callback" ? "" : `<label class="check"><input type="checkbox" data-act="ai" ${h.ai ? "checked" : ""}>
-      🤖 Отвечает ИИ (Claude) — пишет ответ сам, помнит последние реплики в чате</label>`}
+      🤖 Отвечает ИИ (${cfg.ai_provider === "openai" ? "OpenAI" : "Claude"}) — пишет ответ сам, помнит последние реплики в чате</label>`}
     ${h.ai && t !== "callback" ? `<div class="field">
       <label>Инструкция для ИИ: кто он, как и о чём говорит</label>
       <textarea data-f="ai" placeholder="Ты — вежливый администратор детейлинг-студии…">${esc(h.ai)}</textarea>
-      <div class="hint">Нужен ключ Claude API в переменной ANTHROPIC_API_KEY. В превью ИИ не вызывается — там виден запасной ответ.</div>
+      <div class="hint">Нужен ключ в переменной ${AI[cfg.ai_provider || "anthropic"][1]}. Провайдер и модель — в шапке. В превью ИИ не вызывается — там виден запасной ответ.</div>
     </div>` : ""}
     <div class="field">
       <label>${h.ai && t !== "callback" ? "Запасной ответ — если ИИ недоступен" : "Ответ бота"}</label>
@@ -434,6 +439,14 @@ editor.addEventListener("click", e => {
 });
 
 $("#name").oninput = e => { cfg.name = e.target.value; changed(); };
+const AI = { anthropic: ["claude-opus-5-5", "ANTHROPIC_API_KEY"], openai: ["gpt-4o-mini", "OPENAI_API_KEY"] };
+function renderProvider() {
+  $("#provider").value = cfg.ai_provider || "anthropic";
+  $("#model").value = cfg.ai_model || "";
+  $("#model").placeholder = AI[$("#provider").value][0];
+}
+$("#provider").onchange = e => { cfg.ai_provider = e.target.value; renderProvider(); changed(true); };
+$("#model").oninput = e => { cfg.ai_model = e.target.value.trim(); changed(); };
 $("#parse").onchange = e => { cfg.parse_mode = e.target.value; changed(true); renderChat(); };
 
 // ---------- превью чата: та же логика выбора, что в сгенерированном коде ----------
@@ -491,7 +504,7 @@ function renderChat(scroll) {
   box.innerHTML = chat.map(m => m.from === "note" ? `<div class="note">${esc(m.text)}</div>` : `
     <div class="msg ${m.from} ${m.flash ? "flash" : ""}">
       ${m.as ? `<div class="hint" style="text-align:right;margin:0 4px 2px">@${esc(m.as)}</div>` : ""}
-      ${m.ai ? `<div class="hint" style="margin:0 4px 2px">🤖 здесь ответит Claude; ниже — запасной ответ</div>` : ""}
+      ${m.ai ? `<div class="hint" style="margin:0 4px 2px">🤖 здесь ответит ИИ; ниже — запасной ответ</div>` : ""}
       <div class="bubble">${m.from === "bot" ? richText(m.text) : esc(m.text)}</div>
       ${m.buttons?.length ? `<div class="kbd" style="grid-template-columns:repeat(${Math.min(m.columns, m.buttons.length)},1fr)">${
         m.buttons.map((b, j) => `<button data-msg="${m.id}" data-j="${j}">${esc(b.text || "…")}${b.kind === "url" ? " ↗" : ""}</button>`).join("")}</div>` : ""}
@@ -575,7 +588,7 @@ document.addEventListener("keydown", e => {
 (async () => {
   const r = await api("GET", "/api/config");
   cfg = r.config; issues = r.issues; code = r.code;
-  $("#name").value = cfg.name; $("#parse").value = cfg.parse_mode;
+  $("#name").value = cfg.name; $("#parse").value = cfg.parse_mode; renderProvider();
   if (r.env_token) $("#token").placeholder = "Токен из BOT_TOKEN";
   document.title = `${cfg.name} — конструктор ботов`;
   $("#saved").textContent = r.path.split(/[\\/]/).pop();
