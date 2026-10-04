@@ -11,11 +11,16 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 dependencies = []
 
+[project.optional-dependencies]
+bots = ["aiogram>=3.4", "anthropic>=1.11", "openai>=1.0"]
+
 [project.scripts]
 yandex-nosite = "yandex_nosite.cli:main"
+botbuilder = "botbuilder.__main__:main"
 
 [tool.setuptools]
-packages = ["yandex_nosite"]
+packages = ["yandex_nosite", "botbuilder"]
 
 [tool.setuptools.package-data]
 yandex_nosite = ["templates/*.html"]
+botbuilder = ["static/*.html"]
