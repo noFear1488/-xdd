@@ -12,6 +12,8 @@
           "reply": "Привет!",
           "edit": false,                # для callback: менять сообщение, а не слать новое
           "users": "@ivan, @maria",     # необязательно: только для этих пользователей
+          "ai": "Ты — вежливый ...",     # необязательно: отвечает Claude по этой инструкции,
+                                        # а reply — запасной ответ, если ИИ недоступен
           "columns": 2,                 # кнопок в ряду
           "buttons": [
             {"text": "Меню", "kind": "callback", "value": "menu"},
@@ -170,6 +172,7 @@ def normalize(config: dict) -> dict:
             "reply": str(raw.get("reply", "")),
             "edit": bool(raw.get("edit", False)),
             "users": str(raw.get("users", "")).strip(),
+            "ai": str(raw.get("ai", "")).strip(),
             "columns": columns,
             "buttons": buttons,
         })
@@ -230,6 +233,9 @@ def validate(config: dict) -> list[Issue]:
         for name in usernames(h["users"]):
             if not USERNAME_RE.match(name):
                 issues.append(Issue(f"@{name}: username — латиница, цифры и _, от 4 до 32 символов", i, "users"))
+
+        if h["ai"] and trigger == "callback":
+            issues.append(Issue("ИИ отвечает только на сообщения: у нажатия кнопки нет текста", i, "ai"))
 
         if not h["reply"].strip():
             issues.append(Issue("Пустой ответ: Telegram не отправит такое сообщение", i, "reply"))

@@ -9,6 +9,43 @@ from __future__ import annotations
 from .schema import command_name, has_errors, normalize, text_variants, usernames, validate
 
 
+# Общий код ИИ-ответов: история диалога в памяти, отказ и сбои API — запасной ответ.
+AI_HELPER = """
+AI_MODEL = "claude-opus-5-5"
+AI_HISTORY = 20  # сколько последних реплик помнить в каждом чате
+ai_client = anthropic.AsyncAnthropic()  # ключ — из переменной ANTHROPIC_API_KEY
+ai_history = defaultdict(list)
+
+
+async def ai_reply(message, system, fallback):
+    history = ai_history[message.chat.id]
+    history.append({"role": "user", "content": message.text or message.caption or "(сообщение без текста)"})
+    try:
+        response = await ai_client.beta.messages.create(
+            model=AI_MODEL,
+            max_tokens=4000,
+            system=system,
+            messages=list(history),
+            output_config={"effort": "low"},  # для переписки хватает, и отвечает быстрее
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",  # если модель откажется отвечать — повторить на рекомендованной
+        )
+    except Exception:  # сеть, лимиты, нет ключа (это TypeError) — человеку всё равно надо ответить
+        logging.exception("ИИ недоступен, отвечаю запасным текстом")
+        history.pop()
+        return fallback
+    text = "".join(block.text for block in response.content if block.type == "text").strip()
+    if response.stop_reason == "refusal" or not text:
+        history.pop()
+        return fallback
+    text = text[:4096]  # лимит Telegram на сообщение
+    history.append({"role": "assistant", "content": text})
+    del history[:-AI_HISTORY]  # длина чётная — история всегда начинается с реплики пользователя
+    return text
+
+""".splitlines()
+
+
 class ConfigError(ValueError):
     def __init__(self, issues):
         self.issues = issues
@@ -44,6 +81,16 @@ def _handler(index: int, h: dict) -> list[str]:
             f"    await {send}({reply}{markup})",
         ]
 
+    if h["ai"]:
+        body = [
+            "    await message.bot.send_chat_action(message.chat.id, \"typing\")",
+            f"    text = await ai_reply(message, {h['ai']!r}, {reply})",
+            # Ответ модели может содержать «<» или markdown — без разметки Telegram его не отвергнет.
+            f"    await message.answer(text, parse_mode=None{markup})",
+        ]
+    else:
+        body = [f"    await message.answer({reply}{markup})"]
+
     if h["trigger"] == "command":
         condition = f"Command({command_name(h['match'])!r})"
     elif h["trigger"] == "text":
@@ -54,7 +101,7 @@ def _handler(index: int, h: dict) -> list[str]:
     return [
         decorator,
         f"async def {name}(message: Message) -> None:",
-        f"    await message.answer({reply}{markup})",
+        *body,
     ]
 
 
@@ -77,6 +124,7 @@ def generate(config: dict) -> str:
         b["kind"] == "callback" for h in cfg["handlers"] for b in h["buttons"]
     )
     parse_mode = repr(cfg["parse_mode"]) if cfg["parse_mode"] else "None"
+    has_ai = any(h["ai"] for h in cfg["handlers"])
 
     types = ["CallbackQuery", "Message"] if has_callbacks else ["Message"]
     out = [
@@ -86,6 +134,7 @@ def generate(config: dict) -> str:
         "import asyncio",
         "import logging",
         "import os",
+        *(["from collections import defaultdict", "", "import anthropic"] if has_ai else []),
         "",
         "from aiogram import Bot, Dispatcher, F, Router",
         "from aiogram.client.default import DefaultBotProperties",
@@ -95,6 +144,9 @@ def generate(config: dict) -> str:
     if has_buttons:
         out.append("from aiogram.utils.keyboard import InlineKeyboardBuilder")
     out += ["", "router = Router()", ""]
+
+    if has_ai:
+        out += AI_HELPER
 
     if has_buttons:
         out += [

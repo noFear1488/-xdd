@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import tempfile
+import types
 import unittest
 import unittest.mock
 from datetime import datetime
@@ -49,6 +50,9 @@ class ValidateTest(unittest.TestCase):
         issues = validate(cfg)
         self.assertFalse(has_errors(issues))
         self.assertEqual([(i.level, i.field) for i in issues], [("warning", "buttons.0.value")])
+
+    def test_ai_not_allowed_on_buttons(self):
+        self.assertEqual(errors(config(handler("callback", "x", ai="..."))), [(0, "ai")])
 
     def test_second_fallback_is_an_error(self):
         cfg = config(handler("fallback"), handler("fallback"))
@@ -194,6 +198,55 @@ class GeneratedBotTest(unittest.TestCase):
         self.assertEqual(calls[0].text, "лично")
         self.assertIn("бот-визитка", calls[1].text)
         self.assertIn("бот-визитка", calls[2].text)  # без username — обычный ответ
+
+    def ai_bot(self, replies):
+        """Бот с ИИ-блоком; replies — что вернёт «Claude» на каждый вызов (Exception — сбой)."""
+        cfg = config(handler("fallback", reply="запасной", ai="Ты — Мартин друг."))
+        module = load_module(generate(cfg))
+        seen = []
+
+        class FakeAI:
+            class beta:
+                class messages:
+                    @staticmethod
+                    async def create(**kwargs):
+                        seen.append(kwargs)
+                        reply = replies.pop(0)
+                        if isinstance(reply, Exception):
+                            raise reply
+                        stop, text = reply
+                        block = types.SimpleNamespace(type="text", text=text)
+                        return types.SimpleNamespace(stop_reason=stop, content=[block] if text else [])
+
+        module["ai_client"] = FakeAI
+        bot = module["create_bot"]("42:TEST")
+        bot.session = FakeSession()
+        return bot, module["create_dispatcher"](), seen
+
+    def chat(self, bot, dp, *texts):
+        async def run():
+            for n, text in enumerate(texts):
+                await dp.feed_update(bot, Update(update_id=n, **self.text(text)))
+
+        asyncio.run(run())
+        return [c for c in bot.session.calls if isinstance(c, SendMessage)]
+
+    def test_ai_reply_keeps_history(self):
+        bot, dp, seen = self.ai_bot([("end_turn", "Привет, <b>Марта</b>!"), ("end_turn", "Помню тебя.")])
+        calls = self.chat(bot, dp, "привет", "помнишь меня?")
+        self.assertEqual([c.text for c in calls], ["Привет, <b>Марта</b>!", "Помню тебя."])
+        self.assertIsNone(calls[0].parse_mode)  # «<b>» от модели не должен ронять отправку
+        self.assertEqual(seen[0]["system"], "Ты — Мартин друг.")
+        self.assertEqual(seen[0]["model"], "claude-opus-5-5")
+        self.assertEqual([m["role"] for m in seen[1]["messages"]], ["user", "assistant", "user"])
+
+    def test_ai_failure_and_refusal_fall_back(self):
+        bot, dp, seen = self.ai_bot([TypeError("нет ключа"), ("refusal", ""), ("end_turn", "ок")])
+        with self.assertLogs(level="ERROR"):
+            calls = self.chat(bot, dp, "раз", "два", "три")
+        self.assertEqual([c.text for c in calls], ["запасной", "запасной", "ок"])
+        # неудачные реплики не копятся в истории — третий запрос видит только себя
+        self.assertEqual([m["content"] for m in seen[2]["messages"]], ["три"])
 
     def test_url_button(self):
         cfg = config(handler("command", "start", buttons=[{"text": "Сайт", "kind": "url", "value": "https://example.com"}]))

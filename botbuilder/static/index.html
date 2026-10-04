@@ -250,6 +250,7 @@ function renderList() {
     return `<button class="item ${i === sel ? "active" : ""}" data-sel="${i}">
       <div class="trig">${w ? `<span class="dot ${w}"></span>` : ""}${esc(triggerText(h))}
         ${h.buttons.length ? `<span class="tag">${h.buttons.length} кн.</span>` : ""}
+        ${h.ai ? `<span class="tag">🤖 ИИ</span>` : ""}
         ${users(h).length ? `<span class="tag" title="${esc(users(h).map(u => "@" + u).join(", "))}">👤 ${users(h).length}</span>` : ""}</div>
       <div class="snippet">${esc(h.reply.replace(/<[^>]+>/g, "") || "— пустой ответ —")}</div>
     </button>`;
@@ -262,7 +263,7 @@ $("#list").addEventListener("click", e => {
 function select(i) { sel = i; renderList(); renderEditor(); }
 
 function blank(trigger, match = "") {
-  return { trigger, match, reply: "", edit: trigger === "callback", users: "", columns: 1, buttons: [] };
+  return { trigger, match, reply: "", edit: trigger === "callback", users: "", ai: "", columns: 1, buttons: [] };
 }
 document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
   const t = b.dataset.add;
@@ -307,8 +308,15 @@ function renderEditor() {
       <input data-f="users" value="${esc(h.users || "")}" placeholder="@username, @другой — пусто: для всех" style="font-family:var(--mono)">
       <div class="hint">Такие блоки проверяются раньше остальных: так можно ответить конкретному человеку по-особому.</div>
     </div>
+    ${t === "callback" ? "" : `<label class="check"><input type="checkbox" data-act="ai" ${h.ai ? "checked" : ""}>
+      🤖 Отвечает ИИ (Claude) — пишет ответ сам, помнит последние реплики в чате</label>`}
+    ${h.ai && t !== "callback" ? `<div class="field">
+      <label>Инструкция для ИИ: кто он, как и о чём говорит</label>
+      <textarea data-f="ai" placeholder="Ты — вежливый администратор детейлинг-студии…">${esc(h.ai)}</textarea>
+      <div class="hint">Нужен ключ Claude API в переменной ANTHROPIC_API_KEY. В превью ИИ не вызывается — там виден запасной ответ.</div>
+    </div>` : ""}
     <div class="field">
-      <label>Ответ бота</label>
+      <label>${h.ai && t !== "callback" ? "Запасной ответ — если ИИ недоступен" : "Ответ бота"}</label>
       <textarea data-f="reply" placeholder="Текст ответа">${esc(h.reply)}</textarea>
       ${cfg.parse_mode === "HTML" ? `<div class="hint">HTML: &lt;b&gt;жирный&lt;/b&gt;, &lt;i&gt;курсив&lt;/i&gt;, &lt;code&gt;код&lt;/code&gt;, &lt;a href="…"&gt;ссылка&lt;/a&gt;. Символ &lt; пишите как &amp;lt;</div>` : ""}
     </div>
@@ -357,6 +365,12 @@ editor.addEventListener("click", e => {
     return changed(true);
   }
   const act = e.target.closest("[data-act]")?.dataset.act;
+  if (act === "ai") {
+    h.ai = e.target.checked ? (h.ai || "Ты — дружелюбный помощник в Telegram. Отвечай коротко и по-русски, без markdown.") : "";
+    changed(true);
+    if (h.ai) $("#editor [data-f=ai]").focus();
+    return;
+  }
   if (act === "del") { cfg.handlers.splice(sel, 1); sel = Math.max(0, sel - 1); return changed(true); }
   if (act === "dup") { cfg.handlers.splice(sel + 1, 0, structuredClone(h)); sel++; return changed(true); }
   if (act === "up" || act === "down") {
@@ -444,7 +458,7 @@ function route(kind, value) {
 }
 function botMessage(i) {
   const h = cfg.handlers[i];
-  return { from: "bot", id: ++msgSeq, handler: i, text: h.reply, buttons: structuredClone(h.buttons), columns: h.columns };
+  return { from: "bot", id: ++msgSeq, handler: i, text: h.reply, ai: !!h.ai, buttons: structuredClone(h.buttons), columns: h.columns };
 }
 function userSays(text) {
   chat.push({ from: "user", text, as: $("#as").value.trim().replace(/^@/, "") });
@@ -477,6 +491,7 @@ function renderChat(scroll) {
   box.innerHTML = chat.map(m => m.from === "note" ? `<div class="note">${esc(m.text)}</div>` : `
     <div class="msg ${m.from} ${m.flash ? "flash" : ""}">
       ${m.as ? `<div class="hint" style="text-align:right;margin:0 4px 2px">@${esc(m.as)}</div>` : ""}
+      ${m.ai ? `<div class="hint" style="margin:0 4px 2px">🤖 здесь ответит Claude; ниже — запасной ответ</div>` : ""}
       <div class="bubble">${m.from === "bot" ? richText(m.text) : esc(m.text)}</div>
       ${m.buttons?.length ? `<div class="kbd" style="grid-template-columns:repeat(${Math.min(m.columns, m.buttons.length)},1fr)">${
         m.buttons.map((b, j) => `<button data-msg="${m.id}" data-j="${j}">${esc(b.text || "…")}${b.kind === "url" ? " ↗" : ""}</button>`).join("")}</div>` : ""}
