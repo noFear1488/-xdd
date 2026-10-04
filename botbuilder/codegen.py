@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from .schema import command_name, has_errors, normalize, text_variants, validate
+from .schema import command_name, has_errors, normalize, text_variants, usernames, validate
 
 
 class ConfigError(ValueError):
@@ -22,26 +22,35 @@ def _keyboard(h: dict) -> str:
     return f", reply_markup=keyboard([{rows}], {h['columns']})"
 
 
+def _join(*filters: str) -> str:
+    return ", ".join(f for f in filters if f)
+
+
 def _handler(index: int, h: dict) -> list[str]:
     reply = repr(h["reply"])
     markup = _keyboard(h)
     name = f"handler_{index + 1}"
 
+    users = usernames(h["users"])
+    who = f"F.from_user.username.lower().in_({tuple(users)!r})" if users else ""
+
     if h["trigger"] == "callback":
+        data = f"F.data == {h['match']!r}"
         send = "callback.message.edit_text" if h["edit"] else "callback.message.answer"
         return [
-            f"@router.callback_query(F.data == {h['match']!r})",
+            f"@router.callback_query({_join(data, who)})",
             f"async def {name}(callback: CallbackQuery) -> None:",
             "    await callback.answer()",
             f"    await {send}({reply}{markup})",
         ]
 
     if h["trigger"] == "command":
-        decorator = f"@router.message(Command({command_name(h['match'])!r}))"
+        condition = f"Command({command_name(h['match'])!r})"
     elif h["trigger"] == "text":
-        decorator = f"@router.message(F.text.lower().in_({tuple(text_variants(h['match']))!r}))"
+        condition = f"F.text.lower().in_({tuple(text_variants(h['match']))!r})"
     else:
-        decorator = "@router.message()"
+        condition = ""
+    decorator = f"@router.message({_join(condition, who)})"
     return [
         decorator,
         f"async def {name}(message: Message) -> None:",
@@ -56,10 +65,12 @@ def generate(config: dict) -> str:
     cfg = normalize(config)
 
     handlers = list(enumerate(cfg["handlers"]))
-    # aiogram проверяет обработчики по порядку регистрации: «всё остальное» — в конец,
-    # и только первый из них (остальные всё равно не сработали бы).
-    regular = [(i, h) for i, h in handlers if h["trigger"] != "fallback"]
-    fallback = [(i, h) for i, h in handlers if h["trigger"] == "fallback"][:1]
+    # aiogram проверяет обработчики по порядку регистрации. Сначала — блоки для
+    # конкретных людей (они уже всех остальных), в конце — общее «всё остальное»,
+    # и только первое (остальные всё равно не сработали бы).
+    personal = [(i, h) for i, h in handlers if usernames(h["users"])]
+    regular = [(i, h) for i, h in handlers if not usernames(h["users"]) and h["trigger"] != "fallback"]
+    fallback = [(i, h) for i, h in handlers if not usernames(h["users"]) and h["trigger"] == "fallback"][:1]
 
     has_buttons = any(h["buttons"] for h in cfg["handlers"])
     has_callbacks = any(h["trigger"] == "callback" for h in cfg["handlers"]) or any(
@@ -100,7 +111,7 @@ def generate(config: dict) -> str:
             "",
         ]
 
-    for i, h in regular + fallback:
+    for i, h in personal + regular + fallback:
         out += [""] + _handler(i, h) + [""]
 
     if has_callbacks:

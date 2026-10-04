@@ -11,6 +11,7 @@
           "match": "start",             # команда, варианты текста через «|», callback_data
           "reply": "Привет!",
           "edit": false,                # для callback: менять сообщение, а не слать новое
+          "users": "@ivan, @maria",     # необязательно: только для этих пользователей
           "columns": 2,                 # кнопок в ряду
           "buttons": [
             {"text": "Меню", "kind": "callback", "value": "menu"},
@@ -34,6 +35,7 @@ BUTTON_KINDS = ("callback", "url")
 PARSE_MODES = ("HTML", "")
 
 COMMAND_RE = re.compile(r"^[a-z0-9_]{1,32}$")
+USERNAME_RE = re.compile(r"^[a-z0-9_]{4,32}$")
 URL_RE = re.compile(r"^(https?|tg)://\S+$")
 MAX_CALLBACK_BYTES = 64  # лимит Telegram на callback_data
 MAX_TEXT = 4096  # лимит Telegram на длину сообщения
@@ -129,6 +131,16 @@ def text_variants(match: str) -> list[str]:
     return seen
 
 
+def usernames(users: str) -> list[str]:
+    """«@Ivan, maria» → ['ivan', 'maria']: Telegram сравнивает username без учёта регистра."""
+    seen: list[str] = []
+    for part in re.split(r"[\s,;]+", str(users)):
+        part = part.strip().lstrip("@").lower()
+        if part and part not in seen:
+            seen.append(part)
+    return seen
+
+
 def command_name(match: str) -> str:
     return str(match).strip().lstrip("/").lower()
 
@@ -157,6 +169,7 @@ def normalize(config: dict) -> dict:
             "match": str(raw.get("match", "")).strip(),
             "reply": str(raw.get("reply", "")),
             "edit": bool(raw.get("edit", False)),
+            "users": str(raw.get("users", "")).strip(),
             "columns": columns,
             "buttons": buttons,
         })
@@ -211,8 +224,12 @@ def validate(config: dict) -> list[Issue]:
                 issues.append(Issue(f"Кнопка «{match}» уже обрабатывается выше", i, "match"))
             else:
                 callbacks[match] = i
-        else:
-            fallbacks.append(i)
+        elif not usernames(h["users"]):
+            fallbacks.append(i)  # «остальное» для конкретных людей — не конкурент общему
+
+        for name in usernames(h["users"]):
+            if not USERNAME_RE.match(name):
+                issues.append(Issue(f"@{name}: username — латиница, цифры и _, от 4 до 32 символов", i, "users"))
 
         if not h["reply"].strip():
             issues.append(Issue("Пустой ответ: Telegram не отправит такое сообщение", i, "reply"))

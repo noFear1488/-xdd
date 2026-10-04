@@ -59,6 +59,14 @@ class ValidateTest(unittest.TestCase):
             generate(config(handler("command", "")))
 
 
+class UsersTest(unittest.TestCase):
+    def test_bad_username(self):
+        self.assertEqual(errors(config(handler("fallback", users="@ok_name, @ab, @кириллица"))), [(0, "users"), (0, "users")])
+
+    def test_personal_fallback_does_not_clash_with_general(self):
+        self.assertEqual(errors(config(handler("fallback", users="@marta"), handler("fallback"))), [])
+
+
 class CodegenTest(unittest.TestCase):
     def test_output_is_valid_python(self):
         compile(generate(starter()), "bot.py", "exec")
@@ -173,6 +181,19 @@ class GeneratedBotTest(unittest.TestCase):
         nasty = 'a\'b"c\\n\n"""'
         [call] = self.send(config(handler("command", "start", reply=nasty)), self.text("/start"))
         self.assertEqual(call.text, nasty)
+
+    @staticmethod
+    def text_from(text, username):
+        user = User(id=2, is_bot=False, first_name="Марта", username=username)
+        return {"message": Message(message_id=1, date=datetime.now(), chat=CHAT, from_user=user, text=text)}
+
+    def test_personal_reply_wins_over_everything(self):
+        cfg = starter()
+        cfg["handlers"].append(handler("fallback", users="@martasoulll", reply="лично"))
+        calls = self.send(cfg, self.text_from("/start", "MartaSoulll"), self.text_from("/start", "other"), self.text("/start"))
+        self.assertEqual(calls[0].text, "лично")
+        self.assertIn("бот-визитка", calls[1].text)
+        self.assertIn("бот-визитка", calls[2].text)  # без username — обычный ответ
 
     def test_url_button(self):
         cfg = config(handler("command", "start", buttons=[{"text": "Сайт", "kind": "url", "value": "https://example.com"}]))

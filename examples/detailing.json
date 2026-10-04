@@ -3,6 +3,14 @@
   "parse_mode": "HTML",
   "handlers": [
     {
+      "trigger": "fallback",
+      "match": "",
+      "users": "@martasoulll",
+      "reply": "мартуля пердуля",
+      "columns": 1,
+      "buttons": []
+    },
+    {
       "trigger": "command",
       "match": "start",
       "reply": "Приветствую, я мастер детейлинга Твич стайл Промт Юзер Менеджмент! Какой у вас вопрос?",

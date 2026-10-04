@@ -165,6 +165,7 @@ pre.code { margin: 0; flex: 1; overflow: auto; padding: 14px; background: var(--
     <div class="pane on" data-pane="chat">
       <div class="chat" id="chat"></div>
       <form class="composer" id="composer">
+        <input id="as" placeholder="@кто пишет" autocomplete="off" title="От чьего имени писать в превью (для блоков «только для пользователей»)" style="width:110px;flex:none;font-family:var(--mono);font-size:12.5px">
         <input id="say" placeholder="Напишите боту, например /start" autocomplete="off">
         <button class="primary">↑</button>
         <button type="button" id="reset" title="Очистить чат">⟲</button>
@@ -231,6 +232,7 @@ async function save() {
 
 // ---------- список обработчиков ----------
 function cmdName(m) { return m.trim().replace(/^\/+/, "").toLowerCase(); }
+function users(h) { return [...new Set((h.users || "").split(/[\s,;]+/).map(u => u.replace(/^@/, "").toLowerCase()).filter(Boolean))]; }
 function variants(m) { return [...new Set(m.split("|").map(v => v.trim().toLowerCase()).filter(Boolean))]; }
 function triggerText(h) {
   if (h.trigger === "command") return "/" + (cmdName(h.match) || "…");
@@ -247,7 +249,8 @@ function renderList() {
     const w = worst(i);
     return `<button class="item ${i === sel ? "active" : ""}" data-sel="${i}">
       <div class="trig">${w ? `<span class="dot ${w}"></span>` : ""}${esc(triggerText(h))}
-        ${h.buttons.length ? `<span class="tag">${h.buttons.length} кн.</span>` : ""}</div>
+        ${h.buttons.length ? `<span class="tag">${h.buttons.length} кн.</span>` : ""}
+        ${users(h).length ? `<span class="tag" title="${esc(users(h).map(u => "@" + u).join(", "))}">👤 ${users(h).length}</span>` : ""}</div>
       <div class="snippet">${esc(h.reply.replace(/<[^>]+>/g, "") || "— пустой ответ —")}</div>
     </button>`;
   }).join("") || `<div class="empty">Нет обработчиков</div>`;
@@ -259,7 +262,7 @@ $("#list").addEventListener("click", e => {
 function select(i) { sel = i; renderList(); renderEditor(); }
 
 function blank(trigger, match = "") {
-  return { trigger, match, reply: "", edit: trigger === "callback", columns: 1, buttons: [] };
+  return { trigger, match, reply: "", edit: trigger === "callback", users: "", columns: 1, buttons: [] };
 }
 document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
   const t = b.dataset.add;
@@ -299,6 +302,11 @@ function renderEditor() {
     </div>`}
     ${t === "callback" ? `<label class="check"><input type="checkbox" data-f="edit" ${h.edit ? "checked" : ""}>
       Заменять сообщение с кнопками, а не присылать новое</label>` : ""}
+    <div class="field">
+      <label>Только для пользователей <span style="font-weight:normal">(необязательно)</span></label>
+      <input data-f="users" value="${esc(h.users || "")}" placeholder="@username, @другой — пусто: для всех" style="font-family:var(--mono)">
+      <div class="hint">Такие блоки проверяются раньше остальных: так можно ответить конкретному человеку по-особому.</div>
+    </div>
     <div class="field">
       <label>Ответ бота</label>
       <textarea data-f="reply" placeholder="Текст ответа">${esc(h.reply)}</textarea>
@@ -418,23 +426,28 @@ $("#parse").onchange = e => { cfg.parse_mode = e.target.value; changed(true); re
 let chat = [], msgSeq = 0;
 
 function route(kind, value) {
-  const hs = cfg.handlers;
-  if (kind === "callback") return hs.findIndex(h => h.trigger === "callback" && h.match === value);
-  for (let i = 0; i < hs.length; i++) {
-    const h = hs[i];
+  // Порядок как в bot.py: блоки для конкретных людей, потом общие, общее «остальное» — последним.
+  const me = $("#as").value.trim().replace(/^@/, "").toLowerCase();
+  const all = cfg.handlers.map((h, i) => [h, i]);
+  const order = [...all.filter(([h]) => users(h).length), ...all.filter(([h]) => !users(h).length)];
+  const fits = h => !users(h).length || users(h).includes(me);
+  for (const [h, i] of order) {
+    if (!fits(h)) continue;
+    if (kind === "callback") { if (h.trigger === "callback" && h.match === value) return i; continue; }
     if (h.trigger === "command") {
       const m = value.match(/^\/([A-Za-z0-9_]+)(@\S+)?(\s|$)/);   // aiogram Command: /start, /start@bot, /start args
       if (m && m[1] === cmdName(h.match)) return i;
     } else if (h.trigger === "text" && variants(h.match).includes(value.toLowerCase())) return i;
+    else if (h.trigger === "fallback" && users(h).length) return i;
   }
-  return hs.findIndex(h => h.trigger === "fallback");
+  return kind === "callback" ? -1 : cfg.handlers.findIndex(h => h.trigger === "fallback" && !users(h).length);
 }
 function botMessage(i) {
   const h = cfg.handlers[i];
   return { from: "bot", id: ++msgSeq, handler: i, text: h.reply, buttons: structuredClone(h.buttons), columns: h.columns };
 }
 function userSays(text) {
-  chat.push({ from: "user", text });
+  chat.push({ from: "user", text, as: $("#as").value.trim().replace(/^@/, "") });
   const i = route("message", text);
   if (i < 0) chat.push({ from: "note", text: "Бот промолчит — нет подходящего обработчика" });
   else { chat.push(botMessage(i)); select(i); }
@@ -463,6 +476,7 @@ function renderChat(scroll) {
   const box = $("#chat");
   box.innerHTML = chat.map(m => m.from === "note" ? `<div class="note">${esc(m.text)}</div>` : `
     <div class="msg ${m.from} ${m.flash ? "flash" : ""}">
+      ${m.as ? `<div class="hint" style="text-align:right;margin:0 4px 2px">@${esc(m.as)}</div>` : ""}
       <div class="bubble">${m.from === "bot" ? richText(m.text) : esc(m.text)}</div>
       ${m.buttons?.length ? `<div class="kbd" style="grid-template-columns:repeat(${Math.min(m.columns, m.buttons.length)},1fr)">${
         m.buttons.map((b, j) => `<button data-msg="${m.id}" data-j="${j}">${esc(b.text || "…")}${b.kind === "url" ? " ↗" : ""}</button>`).join("")}</div>` : ""}
