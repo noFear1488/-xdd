@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>xcpanel</title>
+<link rel="stylesheet" href="static/app.css">
+</head>
+<body>
+<div id="login" class="login" hidden>
+  <form class="card login-card" id="login-form">
+    <div class="brand"><span class="logo" aria-hidden="true"></span> xcpanel</div>
+    <label>Username <input name="username" autocomplete="username" required></label>
+    <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
+    <p class="error" id="login-error" hidden></p>
+    <button class="btn primary wide" type="submit">Sign in</button>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <header class="topbar">
+    <div class="brand"><span class="logo" aria-hidden="true"></span> xcpanel <span class="muted" id="domain"></span></div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" data-tab="clients" class="active">Clients</button>
+      <button role="tab" data-tab="nodes">Nodes</button>
+      <button role="tab" data-tab="settings">Settings</button>
+    </nav>
+    <button class="btn ghost" id="logout">Sign out</button>
+  </header>
+
+  <main class="content">
+    <section id="tab-clients" class="tab">
+      <div class="stats" id="stats"></div>
+      <div class="toolbar">
+        <input type="search" id="search" placeholder="Search clients" aria-label="Search clients">
+        <button class="btn primary" id="add-client">+ Add client</button>
+      </div>
+      <div id="clients" class="list"></div>
+    </section>
+
+    <section id="tab-nodes" class="tab" hidden>
+      <div class="toolbar">
+        <p class="muted grow">A node is a server running Xray. This server is one; add more over SSH.</p>
+        <button class="btn primary" id="add-node">+ Add node</button>
+      </div>
+      <div id="nodes" class="list"></div>
+    </section>
+
+    <section id="tab-settings" class="tab" hidden>
+      <form class="card form" id="settings-form">
+        <h2>Panel</h2>
+        <div class="grid2">
+          <label>Domain <input name="domain" required></label>
+          <label>Let's Encrypt email <input name="acme_email" type="email" placeholder="optional"></label>
+          <label>Panel path <input name="panel_path" required></label>
+          <label>Subscription path <input name="sub_path" required></label>
+        </div>
+        <p class="hint">Changing the domain or a path moves the panel: you will be sent to the new address and asked to sign in again.</p>
+        <h2>Subscriptions</h2>
+        <div class="grid2">
+          <label>Profile title <input name="sub_title" placeholder="shown in client apps"></label>
+          <label>Apps refresh every (hours) <input name="sub_update_hours" type="number" min="1" max="168"></label>
+          <label>TLS fingerprint
+            <select name="fingerprint">
+              <option>chrome</option><option>firefox</option><option>safari</option><option>ios</option>
+              <option>android</option><option>edge</option><option>random</option><option>randomized</option>
+            </select>
+          </label>
+          <label>Read traffic every (seconds) <input name="stats_interval" type="number" min="10" max="3600"></label>
+        </div>
+        <label class="check"><input type="checkbox" name="block_torrents"> Block BitTorrent (hosting providers send abuse letters for it)</label>
+        <div class="actions"><button class="btn primary" type="submit">Save settings</button></div>
+      </form>
+
+      <form class="card form" id="password-form">
+        <h2>Admin login</h2>
+        <div class="grid2">
+          <label>Username <input name="username" autocomplete="username"></label>
+          <label>Current password <input name="current" type="password" autocomplete="current-password" required></label>
+          <label>New password <input name="new" type="password" minlength="8" autocomplete="new-password" required></label>
+        </div>
+        <div class="actions"><button class="btn primary" type="submit">Change password</button></div>
+      </form>
+      <p class="muted center" id="version"></p>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <div class="modal-head"><h2 id="modal-title"></h2><button class="icon-btn" data-close aria-label="Close">✕</button></div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="static/qrcode.js"></script>
+<script src="static/app.js"></script>
+</body>
+</html>
